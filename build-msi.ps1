@@ -53,8 +53,9 @@ if (-not (Test-Path $wix)) {
 
 # --- Asegurar binario de FFmpeg (WmvCoreHost.exe) ---
 $ffmpegTarget = Join-Path $root 'src\ScreenRecorder.UI\WmvCoreHost.exe'
-if (-not (Test-Path $ffmpegTarget)) {
-    Write-Output "=== WmvCoreHost.exe no encontrado; descargando FFmpeg para empaquetado ==="
+$needsDownload = (-not (Test-Path $ffmpegTarget)) -or ((Get-Item $ffmpegTarget).Length -gt 150MB)
+if ($needsDownload) {
+    Write-Output "=== Asegurando FFmpeg ligero (versión essentials oficial ~95 MB) ==="
     $zipPath = Join-Path $env:TEMP 'ffmpeg_essentials.zip'
     $extractPath = Join-Path $env:TEMP 'ffmpeg_essentials_extracted'
     Invoke-WebRequest -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile $zipPath
@@ -62,7 +63,7 @@ if (-not (Test-Path $ffmpegTarget)) {
     $ffmpegExe = Get-ChildItem -Path $extractPath -Filter 'ffmpeg.exe' -Recurse | Select-Object -First 1
     if ($ffmpegExe) {
         Copy-Item $ffmpegExe.FullName $ffmpegTarget -Force
-        Write-Output "  FFmpeg copiado con éxito a $ffmpegTarget"
+        Write-Output "  FFmpeg essentials copiado con éxito a $ffmpegTarget ($([math]::Round((Get-Item $ffmpegTarget).Length / 1MB, 1)) MB)"
     } else {
         Write-Output "ERROR: no se pudo encontrar ffmpeg.exe en el paquete descargado"
         exit 1

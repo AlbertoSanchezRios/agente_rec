@@ -20,6 +20,12 @@ $ErrorActionPreference = 'Stop'
 # Diagnóstico: volcar toda la salida también a un log para poder diagnosticar fallos.
 $__logDir = Join-Path $env:ProgramData 'ScreenRecorder'
 New-Item -Force -ItemType Directory -Path $__logDir | Out-Null
+try {
+    $acl = Get-Acl $__logDir
+    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule("Users", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow")
+    $acl.AddAccessRule($rule)
+    Set-Acl -Path $__logDir -AclObject $acl
+} catch { }
 Start-Transcript -Path (Join-Path $__logDir 'install-autostart.log') -Force -ErrorAction SilentlyContinue | Out-Null
 
 Write-Output "=== Instalación del servicio watchdog de ScreenRecorder ==="

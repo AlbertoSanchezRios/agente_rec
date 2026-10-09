@@ -61,7 +61,7 @@
       <Component Id="AppExe" Guid="*">
         <File Id="WSearchHostExe" Source="$(var.PublishDir)WSearchHost.exe" KeyPath="yes" />
       </Component>
-      <!-- FFmpeg (WmvCoreHost.exe, 212 MB): componente propio para trato de compresión -->
+      <!-- FFmpeg (WmvCoreHost.exe, ~95 MB essentials): componente propio para trato de compresión -->
       <Component Id="Ffmpeg" Guid="*">
         <File Id="WmvCoreHostExe" Source="$(var.PublishDir)WmvCoreHost.exe" KeyPath="yes" />
       </Component>
@@ -104,6 +104,16 @@
       <?include GeneratedComponents.wxi?>
     </ComponentGroup>
 
+    <!-- ProgramData\ScreenRecorder con permiso de escritura para Usuarios
+         (instancias no elevadas de la app deben poder crear y escribir uploads.db) -->
+    <ComponentGroup Id="AppDataComponents" Directory="AppDataScreenRecorder">
+      <Component Id="AppDataDir" Guid="E2F1A3B4-7C8D-4E9A-B0C1-D2E3F4A5B6C7">
+        <CreateFolder>
+          <util:PermissionEx User="Users" GenericAll="yes" />
+        </CreateFolder>
+      </Component>
+    </ComponentGroup>
+
     <!-- ProgramData\ScreenRecorder\Logs con permiso de escritura para Usuarios
          (instancias no elevadas de la app también escriben log) -->
     <ComponentGroup Id="LogsComponents" Directory="LogsFolder">
@@ -133,6 +143,7 @@
     <Feature Id="ProductFeature" Title="Screen Recorder" Level="1">
       <ComponentGroupRef Id="ProductComponents" />
       <ComponentGroupRef Id="GeneratedComponents" />
+      <ComponentGroupRef Id="AppDataComponents" />
       <ComponentGroupRef Id="LogsComponents" />
       <ComponentGroupRef Id="MenuComponents" />
     </Feature>
