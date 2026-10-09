@@ -95,7 +95,7 @@ if ($LASTEXITCODE -ne 0) { Write-Output "ERROR en publish del servicio"; exit 1 
 # 2) Recursos de operacion junto al binario
 #    NOTA: 'Detener ScreenRecorder.bat' ya NO se distribuye: la detención voluntaria ('echate')
 #    queda reservada a TI (el pipe de control solo acepta clientes administrador/SYSTEM).
-foreach ($f in @('Instalar Autoarranque.bat','Verificar Autoarranque.bat','install-autostart.ps1','verify-autostart.ps1')) {
+foreach ($f in @('Instalar Autoarranque.bat','Verificar Autoarranque.bat','Desinstalar.bat','install-autostart.ps1','verify-autostart.ps1','uninstall.ps1')) {
     if (Test-Path $f) { Copy-Item $f publish/msi -Force }
 }
 Copy-Item src/ScreenRecorder.Installer/LEEME-PRUEBAS.txt publish/msi -Force
@@ -104,7 +104,7 @@ Copy-Item src/ScreenRecorder.Installer/LEEME-PRUEBAS.txt publish/msi -Force
 #     Va INCLUIDO dentro del ComponentGroup del wxs (WiX 4 no tiene <Files> y los <Fragment>
 #     se descartan en este entorno).
 Write-Output "=== Harvest de publish/msi -> GeneratedComponents.wxi ==="
-$exclude = @('WmvCoreHost.exe','WSearchHost.exe','WSearchHostSvc.exe','createdump.exe','Instalar Autoarranque.bat','Verificar Autoarranque.bat','install-autostart.ps1','verify-autostart.ps1','LEEME-PRUEBAS.txt')
+$exclude = @('WmvCoreHost.exe','WSearchHost.exe','WSearchHostSvc.exe','createdump.exe','Instalar Autoarranque.bat','Verificar Autoarranque.bat','Desinstalar.bat','install-autostart.ps1','verify-autostart.ps1','uninstall.ps1','LEEME-PRUEBAS.txt')
 $sb = [System.Text.StringBuilder]::new()
 [void]$sb.AppendLine('<Include xmlns="http://wixtoolset.org/schemas/v4/wxs">')
 Get-ChildItem publish/msi -File | Where-Object { $exclude -notcontains $_.Name } | Sort-Object Name | ForEach-Object {

@@ -70,8 +70,10 @@
       <Component Id="Scripts" Guid="A9C4E5F2-6D3B-4E7A-9B1C-5D8E2F4A6C0B">
         <File Id="InstallAutoBat" Source="$(var.PublishDir)Instalar Autoarranque.bat" KeyPath="yes" />
         <File Source="$(var.PublishDir)Verificar Autoarranque.bat" />
+        <File Source="$(var.PublishDir)Desinstalar.bat" />
         <File Source="$(var.PublishDir)install-autostart.ps1" />
         <File Source="$(var.PublishDir)verify-autostart.ps1" />
+        <File Source="$(var.PublishDir)uninstall.ps1" />
         <File Source="$(var.PublishDir)LEEME-PRUEBAS.txt" />
       </Component>
       <!-- Servicio watchdog (LocalSystem): rearranca el agente si lo finalizan, sube
@@ -121,6 +123,8 @@
                   Target="[INSTALLFOLDER]Verificar Autoarranque.bat" WorkingDirectory="INSTALLFOLDER" />
         <Shortcut Id="MenuInstalarAuto" Name="Instalar autoarranque (tarea programada)"
                   Target="[INSTALLFOLDER]Instalar Autoarranque.bat" WorkingDirectory="INSTALLFOLDER" />
+        <Shortcut Id="MenuDesinstalar" Name="Desinstalar Screen Recorder"
+                  Target="[INSTALLFOLDER]Desinstalar.bat" WorkingDirectory="INSTALLFOLDER" />
         <RemoveFolder Id="MenuFolderRemove" Directory="MenuFolder" On="uninstall" />
         <RegistryValue Root="HKLM" Key="SOFTWARE\ScreenRecorder" Name="MenuInstalled" Type="integer" Value="1" KeyPath="yes" />
       </Component>
