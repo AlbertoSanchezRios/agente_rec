@@ -54,8 +54,7 @@ Cualquier cambio que propongas o implementes **debe respetar estrictamente estas
 
 ### Regla 7: Almacenamiento y Rutas de Red
 - En configuraciones para la NUC, promueve siempre el uso de **rutas UNC** (`\\servidor\carpeta`) y desaconseja el uso de letras de unidad mapeadas (como `Z:\`). Debido al aislamiento de tokens de UAC en Windows, los procesos administrativos no ven las unidades mapeadas del usuario.
-- Toda transacción de subida pasa por la cola duradera SQLite (`uploads.db`) configurada en modo WAL (`PRAGMA journal_mode = WAL`, `synchronous = NORMAL`, `busy_timeout = 30000`).
-- La copia hacia la NUC se realiza de forma atómica a un archivo temporal `.tmp`, verificando la igualdad exacta de tamaño de bytes (`destInfo.Length == srcInfo.Length`) y renombrando atómicamente a `.mp4` antes de borrar el archivo local.
+- La copia hacia la NUC se realiza de forma atómica a un archivo temporal único (`<destino>.<guid>.tmp`), verificando la igualdad exacta de tamaño de bytes (`destInfo.Length == srcInfo.Length`) y renombrando atómicamente a `.mp4` antes de borrar el archivo local. La cola coordina transferencias concurrentes mediante reservas de leases atómicos (`ClaimPending`/`TryClaim` con estado `en_curso`), evitando colisiones de envío entre hilos y procesos.
 
 ---
 

@@ -123,29 +123,29 @@ La subida de archivos de video a la NUC requería un mecanismo transaccional que
 │ SQLite: ProgramData\ScreenRecorder\uploads.db (WAL)    │
 │ ────────────────────────────────────────────────────── │
 │ Columnas:                                              │
-│ - Id (INTEGER PRIMARY KEY)                             │
-│ - FilePath (TEXT UNIQUE)                               │
-│ - CreatedAt (DATETIME)                                 │
-│ - Attempts (INTEGER)                                   │
-│ - LastAttempt (DATETIME)                               │
-│ - NextAttempt (DATETIME)                               │
+│ - path (TEXT PRIMARY KEY)                              │
+│ - estado (TEXT: 'pendiente' | 'en_curso')              │
+│ - intentos (INTEGER)                                   │
+│ - creado (TEXT DATETIME)                               │
+│ - actualizado (TEXT DATETIME)                          │
+│ - enviado (TEXT)                                       │
 └────────────────────────────────────────────────────────┘
                   │
-                  ├── Copia atómica a destino remoto: video.mp4.tmp
+                  ├── Copia atómica a destino remoto: video.mp4.<guid>.tmp
                   ├── Verificación estricta: dest.Length == src.Length
                   ├── Renombrado atómico: File.Move(tmp, dest, overwrite: true)
                   ├── ¿Éxito? ──► Elimina registro de SQLite y borra archivo local.
-                  └── ¿Fallo? ──► Limpia .tmp remoto, incrementa Attempts, backoff exponencial.
+                  └── ¿Fallo? ──► Limpia .tmp remoto, marca 'pendiente' e incrementa intentos.
 ```
 
 ### Características de Robustez en la Base de Datos:
-- **Concurrencia en Modo WAL (Write-Ahead Logging):** Para permitir lecturas y escrituras simultáneas entre el agente interactivo y el servicio supervisor sin bloqueos ni contención de base de datos (`SQLITE_BUSY`), la conexión se inicializa con:
+- **Concurrencia en Modo WAL y Leases Atómicos:** Para permitir lecturas y escrituras simultáneas entre el agente interactivo y el servicio supervisor sin bloqueos ni contención de base de datos (`SQLITE_BUSY`), la conexión se inicializa con:
   ```sql
   PRAGMA journal_mode = WAL;
   PRAGMA synchronous = NORMAL;
   PRAGMA busy_timeout = 30000;
   ```
-  Se removió `Cache=Shared` para evitar retenciones de caché inconsistentes entre diferentes procesos.
+  Se implementó un mecanismo de reservas/leases atómicos (`ClaimPending` y `TryClaim`), cambiando el estado a `'en_curso'` y actualizando la marca de tiempo. Esto garantiza que un fragmento que está siendo transferido en segundo plano no sea tomado concurrentemente por el temporizador periódico ni por el servicio watchdog.
 - **Disyuntor Integrado (Circuit Breaker):** Si la base de datos sufre 3 fallos consecutivos (por ejemplo, si el archivo SQLite sufre corrupción en disco por una falla de sectores), el sistema conmuta automáticamente al **Modo Directo**. En modo directo, el servicio omite la base de datos y escanea los archivos directamente en el disco para subirlos, asegurando que ningún video se quede atrapado.
 
 ---
