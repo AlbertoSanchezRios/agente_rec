@@ -1,0 +1,76 @@
+name: Build and Package MSI
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      product_version:
+        description: 'Version del producto MSI (ej. 1.2.0)'
+        required: false
+        default: '1.2.0'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Compilar y Empaquetar MSI
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Instalar WiX Toolset CLI 4.0.6
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 4.0.6
+
+      - name: Asegurar binario de FFmpeg (WmvCoreHost.exe)
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "src/ScreenRecorder.UI/WmvCoreHost.exe")) {
+            Write-Host "Descargando FFmpeg para empaquetado..."
+            $zipPath = "$env:TEMP\ffmpeg.zip"
+            $extractPath = "$env:TEMP\ffmpeg_extracted"
+            Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile $zipPath
+            Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+            $ffmpegExe = Get-ChildItem -Path $extractPath -Filter "ffmpeg.exe" -Recurse | Select-Object -First 1
+            if ($ffmpegExe) {
+              Copy-Item $ffmpegExe.FullName "src/ScreenRecorder.UI/WmvCoreHost.exe" -Force
+              Write-Host "FFmpeg copiado como WmvCoreHost.exe con éxito"
+            } else {
+              throw "No se pudo encontrar ffmpeg.exe en el archivo descargado"
+            }
+            Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+            Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
+          } else {
+            Write-Host "Binario WmvCoreHost.exe ya presente en el entorno."
+          }
+
+      - name: Compilar y Empaquetar MSI
+        shell: pwsh
+        run: |
+          $ver = "${{ github.event.inputs.product_version }}"
+          if ([string]::IsNullOrWhiteSpace($ver)) { $ver = "1.2.0" }
+          if ("${{ github.ref }}" -match '^refs/tags/v([0-9]+\.[0-9]+\.[0-9]+)') {
+            $ver = $Matches[1]
+          }
+          Write-Host "Compilando instalador MSI con version: $ver"
+          ./build-msi.ps1 -ProductVersion $ver
+
+      - name: Subir artefacto MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScreenRecorder-MSI
+          path: dist/*.msi
+          if-no-files-found: error
