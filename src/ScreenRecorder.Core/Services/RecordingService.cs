@@ -4,7 +4,6 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows.Forms;
 using ScreenRecorder.Core.Audio;
 using ScreenRecorder.Core.Models;
 

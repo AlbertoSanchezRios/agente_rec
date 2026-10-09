@@ -3,14 +3,13 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.Windows.Forms;
 using ScreenRecorder.Core.Models;
 
 namespace ScreenRecorder.Core.Services;
 
 /// <summary>
-/// Geometría real de los monitores conectados. Centraliza el acceso a
-/// <see cref="System.Windows.Forms.Screen"/> para no tocar UI desde el pipeline.
+/// Geometría real de los monitores conectados. Centraliza el acceso a Win32 P/Invoke
+/// (EnumDisplayMonitors y GetMonitorInfo) para desacoplar completamente el Core de Windows Forms.
 /// </summary>
 public interface IScreenGeometryService
 {
@@ -32,7 +31,7 @@ public record CaptureRegion(int X, int Y, int Width, int Height)
 
 /// <summary>
 /// Un monitor tal como lo ve el sistema (orden de enumeración, índice y bounds).
-/// Bounds = coordenadas lógicas (Screen.AllScreens, escalado del sistema). Scale = factor
+/// Bounds = coordenadas lógicas (escalado del sistema). Scale = factor
 /// DPI/96 de ESTE monitor. PhysicalBounds = bounds en píxeles físicos reales (Scale propio).
 /// </summary>
 public record MonitorInfo(int Index, bool IsPrimary, Rectangle Bounds)
@@ -57,13 +56,22 @@ public class ScreenGeometryService : IScreenGeometryService
     {
         try
         {
-            return Screen.AllScreens
-                .Select((s, i) =>
+            var monitors = new List<MonitorInfo>();
+            int index = 0;
+
+            EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (IntPtr hMonitor, IntPtr hdcMonitor, ref RECT lprcMonitor, IntPtr dwData) =>
+            {
+                var mi = new MONITORINFOEX();
+                mi.cbSize = Marshal.SizeOf<MONITORINFOEX>();
+
+                if (GetMonitorInfo(hMonitor, ref mi))
                 {
-                    var bounds = new Rectangle(s.Bounds.X, s.Bounds.Y, s.Bounds.Width, s.Bounds.Height);
-                    // Físicos primero por EnumDisplaySettings (independiente del DPI del proceso);
-                    // si falla, por GetDpiForMonitor; y si también, 1.0.
-                    var native = GetNativeResolution(s.DeviceName);
+                    bool isPrimary = (mi.dwFlags & MONITORINFOF_PRIMARY) != 0;
+                    var bounds = mi.rcMonitor.ToRectangle();
+                    var deviceName = mi.szDevice ?? string.Empty;
+
+                    // Físicos primero por EnumDisplaySettings; si falla, por GetDpiForMonitor; y si también, 1.0.
+                    var native = GetNativeResolution(deviceName);
                     double scale;
                     Rectangle physical;
                     if (native.HasValue && bounds.Width > 0)
@@ -77,20 +85,25 @@ public class ScreenGeometryService : IScreenGeometryService
                     }
                     else
                     {
-                        scale = GetMonitorScale(s);
+                        scale = GetMonitorScale(hMonitor);
                         physical = new Rectangle(
                             (int)Math.Round(bounds.X * scale),
                             (int)Math.Round(bounds.Y * scale),
                             (int)Math.Round(bounds.Width * scale),
                             (int)Math.Round(bounds.Height * scale));
                     }
-                    return new MonitorInfo(Index: i, IsPrimary: s.Primary, Bounds: bounds)
+
+                    monitors.Add(new MonitorInfo(Index: index++, IsPrimary: isPrimary, Bounds: bounds)
                     {
                         Scale = scale,
                         PhysicalBounds = physical
-                    };
-                })
-                .ToList();
+                    });
+                }
+
+                return true;
+            }, IntPtr.Zero);
+
+            return monitors;
         }
         catch (Exception ex)
         {
@@ -99,11 +112,41 @@ public class ScreenGeometryService : IScreenGeometryService
         }
     }
 
+    [DllImport("user32.dll")]
+    private static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr lprcClip, MonitorEnumProc lpfnEnum, IntPtr dwData);
+
+    private delegate bool MonitorEnumProc(IntPtr hMonitor, IntPtr hdcMonitor, ref RECT lprcMonitor, IntPtr dwData);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFOEX lpmi);
+
+    private const int CCHDEVICENAME = 32;
+    private const int MONITORINFOF_PRIMARY = 1;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    private struct MONITORINFOEX
+    {
+        public int cbSize;
+        public RECT rcMonitor;
+        public RECT rcWork;
+        public int dwFlags;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = CCHDEVICENAME)]
+        public string szDevice;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+
+        public Rectangle ToRectangle() => new Rectangle(Left, Top, Right - Left, Bottom - Top);
+    }
+
     [DllImport("shcore.dll")]
     private static extern int GetDpiForMonitor(IntPtr hmonitor, int dpiType, out uint dpiX, out uint dpiY);
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr MonitorFromPoint(Point pt, uint dwFlags);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -171,13 +214,12 @@ public class ScreenGeometryService : IScreenGeometryService
     }
 
     /// <summary>Factor DPI/96 del monitor (1.0 = 96 DPI / sin escalado). Fallback 1.0 si falla.</summary>
-    private static double GetMonitorScale(Screen screen)
+    private static double GetMonitorScale(IntPtr hMonitor)
     {
         try
         {
-            var handle = MonitorFromPoint(new Point(screen.Bounds.X + 1, screen.Bounds.Y + 1), 2 /*MONITOR_DEFAULTTONEAREST*/);
-            if (handle == IntPtr.Zero) return 1.0;
-            if (GetDpiForMonitor(handle, 0 /*MDT_EFFECTIVE_DPI*/, out var dpiX, out _) != 0) return 1.0;
+            if (hMonitor == IntPtr.Zero) return 1.0;
+            if (GetDpiForMonitor(hMonitor, 0 /*MDT_EFFECTIVE_DPI*/, out var dpiX, out _) != 0) return 1.0;
             return dpiX / 96.0;
         }
         catch

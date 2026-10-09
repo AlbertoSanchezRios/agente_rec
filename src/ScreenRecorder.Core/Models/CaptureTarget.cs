@@ -3,7 +3,7 @@ namespace ScreenRecorder.Core.Models;
 /// <summary>
 /// Qué parte del escritorio se graba.
 /// Los monitores se numeran por su índice DXGI (usado por ddagrab),
-/// validado en runtime contra <see cref="System.Windows.Forms.Screen.AllScreens"/>.
+/// validado en runtime contra IScreenGeometryService.
 /// </summary>
 public enum CaptureTarget
 {
