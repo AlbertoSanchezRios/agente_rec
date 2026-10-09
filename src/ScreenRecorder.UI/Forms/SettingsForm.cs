@@ -438,9 +438,9 @@ public partial class SettingsForm : Form
         };
         _captureModeComboBox.Items.AddRange(new object[]
         {
-            "Automática (recomendada: GPU, bajo consumo)",
-            "GPU (ddagrab; puede parpadear el cursor en Intel)",
-            "GDI (sin parpadeo del cursor; más CPU)"
+            "Automática (recomendada: GPU hardware Intel/NVIDIA/AMD)",
+            "GPU (ddagrab: Intel QSV / NVIDIA NVENC / AMD AMF)",
+            "GDI (compatibilidad multi-monitor; mayor CPU)"
         });
         Row(videoGrid, 7, "Modo de captura:", _captureModeComboBox);
         yPos += 244 + 12;

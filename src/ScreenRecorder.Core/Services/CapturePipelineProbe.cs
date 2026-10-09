@@ -69,8 +69,11 @@ public class CapturePipelineProbe : ICapturePipelineProbe
         // Modo forzado GDI (elige el usuario cuando el cursor parpadea con la captura GPU).
         if (pref == 2)
         {
-            _logger.LogInfo("Modo de captura: GDI forzado (sin parpadeo del cursor; más CPU).");
-            var gdiForced = await TryGdiX264Async(settings.CaptureTarget, region, scale, fps);
+            _logger.LogInfo("Modo de captura: GDI forzado (sin parpadeo del cursor).");
+            var gdiForced = await TryGdiNvencAsync(region, scale, fps)
+                ?? await TryGdiQsvAsync(region, scale, fps)
+                ?? await TryGdiAmfAsync(region, scale, fps)
+                ?? await TryGdiX264Async(settings.CaptureTarget, region, scale, fps);
             var chosenGdi = gdiForced ?? new CapturePipeline(CaptureBackend.Gdi, 0, EncoderKind.X264, fps, region, scale, dupFrames);
             _logger.LogInfo($"Pipeline elegido: {chosenGdi.Describe()}");
             SaveToCache(chosenGdi);
@@ -83,7 +86,10 @@ public class CapturePipelineProbe : ICapturePipelineProbe
         if (settings.CaptureTarget == CaptureTarget.All)
         {
             _logger.LogInfo($"Target=All (varios monitores): se usa GDI para capturar toda la región {region.Size}.");
-            var gdi = await TryGdiX264Async(settings.CaptureTarget, region, scale, fps);
+            var gdi = await TryGdiNvencAsync(region, scale, fps)
+                ?? await TryGdiQsvAsync(region, scale, fps)
+                ?? await TryGdiAmfAsync(region, scale, fps)
+                ?? await TryGdiX264Async(settings.CaptureTarget, region, scale, fps);
             var chosenAll = gdi ?? new CapturePipeline(CaptureBackend.Gdi, 0, EncoderKind.X264, fps, region, scale, dupFrames);
             _logger.LogInfo($"Pipeline elegido: {chosenAll.Describe()}");
             SaveToCache(chosenAll);
@@ -95,10 +101,20 @@ public class CapturePipelineProbe : ICapturePipelineProbe
         // Modo GPU forzado: solo sondeos DDA (caer a GDI si la GPU no sirve, mejor que no grabar).
         var chosen = pref == 1
             ? await TryDdaQsvAsync(region, scale, outputIndex, fps, dupFrames)
+                ?? await TryDdaNvencAsync(region, scale, outputIndex, fps, dupFrames)
+                ?? await TryDdaAmfAsync(region, scale, outputIndex, fps, dupFrames)
                 ?? await TryDdaX264Async(region, scale, outputIndex, fps, dupFrames)
+                ?? await TryGdiNvencAsync(region, scale, fps)
+                ?? await TryGdiQsvAsync(region, scale, fps)
+                ?? await TryGdiAmfAsync(region, scale, fps)
                 ?? await TryGdiX264Async(settings.CaptureTarget, region, scale, fps)
             : await TryDdaQsvAsync(region, scale, outputIndex, fps, dupFrames)
+                ?? await TryDdaNvencAsync(region, scale, outputIndex, fps, dupFrames)
+                ?? await TryDdaAmfAsync(region, scale, outputIndex, fps, dupFrames)
                 ?? await TryDdaX264Async(region, scale, outputIndex, fps, dupFrames)
+                ?? await TryGdiNvencAsync(region, scale, fps)
+                ?? await TryGdiQsvAsync(region, scale, fps)
+                ?? await TryGdiAmfAsync(region, scale, fps)
                 ?? await TryGdiX264Async(settings.CaptureTarget, region, scale, fps);
 
         if (chosen == null)
@@ -202,6 +218,24 @@ public class CapturePipelineProbe : ICapturePipelineProbe
         return ok ? new CapturePipeline(CaptureBackend.Dda, outputIndex, EncoderKind.Qsv, fps, region, scale, dupFrames) : null;
     }
 
+    private async Task<CapturePipeline?> TryDdaNvencAsync(CaptureRegion region, ScaleSize scale, int outputIndex, int fps, bool dupFrames)
+    {
+        var dup = dupFrames ? "" : ":dup_frames=0";
+        var filter = $"ddagrab=output_idx={outputIndex}:framerate={fps}{dup}:draw_mouse=0,hwdownload,format=bgra,scale={scale.Width}:{scale.Height}";
+        var args = $"-hide_banner -loglevel error -f lavfi -i \"{filter}\" -frames:v 12 -an -c:v h264_nvenc -preset p1 -cq 28 -pix_fmt yuv420p -f null -";
+        var ok = await ProbeAsync(args, "ddagrab+h264_nvenc");
+        return ok ? new CapturePipeline(CaptureBackend.Dda, outputIndex, EncoderKind.Nvenc, fps, region, scale, dupFrames) : null;
+    }
+
+    private async Task<CapturePipeline?> TryDdaAmfAsync(CaptureRegion region, ScaleSize scale, int outputIndex, int fps, bool dupFrames)
+    {
+        var dup = dupFrames ? "" : ":dup_frames=0";
+        var filter = $"ddagrab=output_idx={outputIndex}:framerate={fps}{dup}:draw_mouse=0,hwdownload,format=bgra,scale={scale.Width}:{scale.Height}";
+        var args = $"-hide_banner -loglevel error -f lavfi -i \"{filter}\" -frames:v 12 -an -c:v h264_amf -quality speed -rc cqp -qp_i 28 -qp_p 28 -pix_fmt yuv420p -f null -";
+        var ok = await ProbeAsync(args, "ddagrab+h264_amf");
+        return ok ? new CapturePipeline(CaptureBackend.Dda, outputIndex, EncoderKind.Amf, fps, region, scale, dupFrames) : null;
+    }
+
     private async Task<CapturePipeline?> TryDdaX264Async(CaptureRegion region, ScaleSize scale, int outputIndex, int fps, bool dupFrames)
     {
         var dup = dupFrames ? "" : ":dup_frames=0";
@@ -209,6 +243,39 @@ public class CapturePipelineProbe : ICapturePipelineProbe
         var args = $"-hide_banner -loglevel error -f lavfi -i \"{filter}\" -frames:v 12 -an -c:v libx264 -preset veryfast -crf 23 -threads 2 -pix_fmt yuv420p -f null -";
         var ok = await ProbeAsync(args, "ddagrab+libx264");
         return ok ? new CapturePipeline(CaptureBackend.Dda, outputIndex, EncoderKind.X264, fps, region, scale, dupFrames) : null;
+    }
+
+    private async Task<CapturePipeline?> TryGdiNvencAsync(CaptureRegion region, ScaleSize scale, int fps)
+    {
+        var input = $"-f gdigrab -framerate {fps} -offset_x {region.X} -offset_y {region.Y} -video_size {region.Width}x{region.Height} -i desktop";
+        var vf = scale.Width == region.Width && scale.Height == region.Height
+            ? ""
+            : $" -vf scale={scale.Width}:{scale.Height}";
+        var args = $"-hide_banner -loglevel error {input} -frames:v 12 -an{vf} -c:v h264_nvenc -preset p1 -cq 28 -pix_fmt yuv420p -f null -";
+        var ok = await ProbeAsync(args, "gdigrab+h264_nvenc");
+        return ok ? new CapturePipeline(CaptureBackend.Gdi, 0, EncoderKind.Nvenc, fps, region, scale, DupFrames: true) : null;
+    }
+
+    private async Task<CapturePipeline?> TryGdiQsvAsync(CaptureRegion region, ScaleSize scale, int fps)
+    {
+        var input = $"-f gdigrab -framerate {fps} -offset_x {region.X} -offset_y {region.Y} -video_size {region.Width}x{region.Height} -i desktop";
+        var vf = scale.Width == region.Width && scale.Height == region.Height
+            ? ""
+            : $" -vf scale={scale.Width}:{scale.Height}";
+        var args = $"-hide_banner -loglevel error {input} -frames:v 12 -an{vf} -c:v h264_qsv -preset veryfast -global_quality 28 -f null -";
+        var ok = await ProbeAsync(args, "gdigrab+h264_qsv");
+        return ok ? new CapturePipeline(CaptureBackend.Gdi, 0, EncoderKind.Qsv, fps, region, scale, DupFrames: true) : null;
+    }
+
+    private async Task<CapturePipeline?> TryGdiAmfAsync(CaptureRegion region, ScaleSize scale, int fps)
+    {
+        var input = $"-f gdigrab -framerate {fps} -offset_x {region.X} -offset_y {region.Y} -video_size {region.Width}x{region.Height} -i desktop";
+        var vf = scale.Width == region.Width && scale.Height == region.Height
+            ? ""
+            : $" -vf scale={scale.Width}:{scale.Height}";
+        var args = $"-hide_banner -loglevel error {input} -frames:v 12 -an{vf} -c:v h264_amf -quality speed -rc cqp -qp_i 28 -qp_p 28 -pix_fmt yuv420p -f null -";
+        var ok = await ProbeAsync(args, "gdigrab+h264_amf");
+        return ok ? new CapturePipeline(CaptureBackend.Gdi, 0, EncoderKind.Amf, fps, region, scale, DupFrames: true) : null;
     }
 
     private async Task<CapturePipeline?> TryGdiX264Async(CaptureTarget target, CaptureRegion region, ScaleSize scale, int fps)

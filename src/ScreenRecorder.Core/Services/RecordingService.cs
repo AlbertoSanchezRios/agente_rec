@@ -997,10 +997,20 @@ public class RecordingService : IRecordingService
             // QSV codifica directamente a nv12 (no forzar yuv420p: rompería la conversión).
             args.Append("-c:v h264_qsv -preset veryfast -global_quality 28 ");
         }
+        else if (pipeline.Encoder == EncoderKind.Nvenc)
+        {
+            // NVENC (NVIDIA): aceleración por hardware ultra-baja CPU (<1.5%).
+            args.Append("-c:v h264_nvenc -preset p1 -cq 28 -pix_fmt yuv420p ");
+        }
+        else if (pipeline.Encoder == EncoderKind.Amf)
+        {
+            // AMF (AMD): aceleración por hardware ultra-baja CPU (<1.5%).
+            args.Append("-c:v h264_amf -quality speed -rc cqp -qp_i 28 -qp_p 28 -pix_fmt yuv420p ");
+        }
         else
         {
             // ultrafast: ~la mitad de CPU que veryfast a cambio de más bitrate (única opción
-            // razonable cuando no hay QSV en equipos modestos, p. ej. i5 de 4 núcleos).
+            // razonable cuando no hay aceleración por GPU en equipos modestos, p. ej. i5 de 4 núcleos).
             args.Append("-c:v libx264 -preset ultrafast -crf 23 -threads 2 -pix_fmt yuv420p ");
         }
 

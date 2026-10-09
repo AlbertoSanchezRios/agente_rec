@@ -14,8 +14,12 @@ public enum CaptureBackend
 /// <summary>Codificador de video elegido por el sondeo.</summary>
 public enum EncoderKind
 {
-    /// <summary>Intel Quick Sync (GPU, casi sin CPU). Si falla, libx264.</summary>
+    /// <summary>Intel Quick Sync (GPU, casi sin CPU).</summary>
     Qsv,
+    /// <summary>NVIDIA NVENC (GPU, casi sin CPU).</summary>
+    Nvenc,
+    /// <summary>AMD Advanced Media Framework (GPU, casi sin CPU).</summary>
+    Amf,
     /// <summary>libx264 por software (CPU).</summary>
     X264
 }
@@ -36,7 +40,15 @@ public record CapturePipeline(
     /// <summary>Etiqueta corta para el log de arranque.</summary>
     public string Describe() =>
         $"captura={(Backend == CaptureBackend.Dda ? $"ddagrab(idx={OutputIndex})" : "gdigrab")} " +
-        $"enc={(Encoder == EncoderKind.Qsv ? "h264_qsv" : "libx264")} " +
+        $"enc={EncoderName(Encoder)} " +
         $"{Region.Size}->{Scale.Width}x{Scale.Height}@{Fps}" +
         (DupFrames ? "" : " dup_frames=0");
+
+    private static string EncoderName(EncoderKind enc) => enc switch
+    {
+        EncoderKind.Qsv => "h264_qsv",
+        EncoderKind.Nvenc => "h264_nvenc",
+        EncoderKind.Amf => "h264_amf",
+        _ => "libx264"
+    };
 }
