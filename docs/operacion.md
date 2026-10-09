@@ -53,10 +53,20 @@ msiexec /i ScreenRecorder-1.2.0.msi /qn /norestart
 *Nota:* Al instalar en modo silencioso (`/qn`), el servicio supervisor se registra y arranca de inmediato, pero no se mostrará ninguna interfaz gráfica en pantalla.
 
 ### Método C: Desinstalación Completa
-```cmd
-msiexec /x ScreenRecorder-1.2.0.msi /qn /norestart
-```
-Al desinstalar, el instalador detiene de forma limpia los procesos, da de baja el servicio de Windows y remueve los archivos de `Program Files`.
+Existen dos formas estándar de desinstalar el software:
+
+1. **Vía Wrapper Interactivo (`Desinstalar.bat`):**  
+   Ejecuta con doble clic `Desinstalar.bat` (desde la raíz del proyecto o desde `C:\Program Files\ScreenRecorder\`).  
+   El script se auto-eleva como Administrador, establece la bandera `stopped`, detiene el servicio y los procesos, ejecuta la desinstalación formal del MSI vía `msiexec`, limpia el registro y purga las carpetas residuales en `ProgramData` y `Program Files`.
+2. **Vía Línea de Comandos / SCCM / Intune:**  
+   ```cmd
+   msiexec /x ScreenRecorder-1.2.0.msi /qn /norestart
+   ```
+   O ejecutando directamente el script de automatización PowerShell:
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File uninstall.ps1 [-KeepData]
+   ```
+   Al desinstalar, el sistema detiene de forma limpia los procesos, da de baja el servicio de Windows y remueve los archivos de `Program Files` y `ProgramData`.
 
 ---
 

@@ -83,9 +83,12 @@ D:\dev\agente_rec\
 ├── publish-fase1.ps1                 # Script de compilación y publicación directa de binarios
 ├── install-autostart.ps1             # Registro y configuración del servicio watchdog
 ├── verify-autostart.ps1              # Diagnóstico exhaustivo del estado del sistema
+├── uninstall-autostart.ps1 / uninstall.ps1 # Desinstalación y purga completa del sistema
 ├── VER_CONFIGURACION.ps1             # Consulta de la configuración guardada en HKLM
+├── Compilar MSI.bat                  # Wrapper interactivo para compilar y empaquetar MSI
 ├── Instalar Autoarranque.bat         # Wrapper interactivo para administradores
-└── Verificar Autoarranque.bat        # Wrapper de comprobación rápida
+├── Verificar Autoarranque.bat        # Wrapper de comprobación rápida
+└── Desinstalar.bat                   # Wrapper interactivo de desinstalación limpia
 ```
 
 ---
