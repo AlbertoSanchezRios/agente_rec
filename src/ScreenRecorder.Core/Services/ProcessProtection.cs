@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
 
 namespace ScreenRecorder.Core.Services;
 
@@ -27,27 +28,51 @@ public static class ProcessProtection
     /// <summary>
     /// Aplica una DACL que deniega PROCESS_TERMINATE a "Usuarios" y concede control total a
     /// SISTEMA y Administradores. Nunca lanza excepción: en caso de fallo solo loguea.
+    /// Utiliza SIDs administrados con SecurityIdentifier para evitar fugas de memoria unmanaged.
     /// </summary>
     public static bool DenyTerminateForUsers(Process process, ILoggerService logger, string label)
     {
         IntPtr acl = IntPtr.Zero;
+        GCHandle? hUsers = null;
+        GCHandle? hSystem = null;
+        GCHandle? hAdmins = null;
+
         try
         {
-            IntPtr usersSid = GetSid("S-1-5-32-545");
-            IntPtr systemSid = GetSid("S-1-5-18");
-            IntPtr adminsSid = GetSid("S-1-5-32-544");
+            var usersSid = new SecurityIdentifier("S-1-5-32-545");
+            var systemSid = new SecurityIdentifier("S-1-5-18");
+            var adminsSid = new SecurityIdentifier("S-1-5-32-544");
+
+            var usersBytes = new byte[usersSid.BinaryLength];
+            usersSid.GetBinaryForm(usersBytes, 0);
+
+            var systemBytes = new byte[systemSid.BinaryLength];
+            systemSid.GetBinaryForm(systemBytes, 0);
+
+            var adminsBytes = new byte[adminsSid.BinaryLength];
+            adminsSid.GetBinaryForm(adminsBytes, 0);
+
+            hUsers = GCHandle.Alloc(usersBytes, GCHandleType.Pinned);
+            hSystem = GCHandle.Alloc(systemBytes, GCHandleType.Pinned);
+            hAdmins = GCHandle.Alloc(adminsBytes, GCHandleType.Pinned);
+
+            IntPtr pUsers = hUsers.Value.AddrOfPinnedObject();
+            IntPtr pSystem = hSystem.Value.AddrOfPinnedObject();
+            IntPtr pAdmins = hAdmins.Value.AddrOfPinnedObject();
 
             int aclSize = 8
-                + (8 + (int)GetLengthSid(usersSid))
-                + (8 + (int)GetLengthSid(systemSid))
-                + (8 + (int)GetLengthSid(adminsSid));
+                + (8 + usersBytes.Length)
+                + (8 + systemBytes.Length)
+                + (8 + adminsBytes.Length);
+
             acl = Marshal.AllocHGlobal(aclSize);
             if (!InitializeAcl(acl, aclSize, AclRevision)) return Fail(logger, label, "InitializeAcl");
+
             // AddAccessDeniedAce/AddAccessAllowedAce devuelven BOOL: != 0 = ÉXITO, 0 = fallo.
             // Denegación PRIMERO (precede a las concesiones).
-            if (AddAccessDeniedAce(acl, AclRevision, ProcessTerminate, usersSid) == 0) return Fail(logger, label, "AddAccessDeniedAce");
-            if (AddAccessAllowedAce(acl, AclRevision, FullControl, systemSid) == 0) return Fail(logger, label, "AddAccessAllowedAce(SYSTEM)");
-            if (AddAccessAllowedAce(acl, AclRevision, FullControl, adminsSid) == 0) return Fail(logger, label, "AddAccessAllowedAce(Administradores)");
+            if (AddAccessDeniedAce(acl, AclRevision, ProcessTerminate, pUsers) == 0) return Fail(logger, label, "AddAccessDeniedAce");
+            if (AddAccessAllowedAce(acl, AclRevision, FullControl, pSystem) == 0) return Fail(logger, label, "AddAccessAllowedAce(SYSTEM)");
+            if (AddAccessAllowedAce(acl, AclRevision, FullControl, pAdmins) == 0) return Fail(logger, label, "AddAccessAllowedAce(Administradores)");
 
             if (SetSecurityInfo(new HandleRef(process, process.Handle), SeKernelObject,
                     DaclSecurityInformation, IntPtr.Zero, IntPtr.Zero, acl, IntPtr.Zero) != 0)
@@ -65,6 +90,9 @@ public static class ProcessProtection
         }
         finally
         {
+            if (hUsers.HasValue && hUsers.Value.IsAllocated) hUsers.Value.Free();
+            if (hSystem.HasValue && hSystem.Value.IsAllocated) hSystem.Value.Free();
+            if (hAdmins.HasValue && hAdmins.Value.IsAllocated) hAdmins.Value.Free();
             if (acl != IntPtr.Zero) Marshal.FreeHGlobal(acl);
         }
     }
@@ -93,20 +121,6 @@ public static class ProcessProtection
         logger.LogWarning($"Protección anti-finalización ({label}): falló en {step} (error {Marshal.GetLastWin32Error()}).");
         return false;
     }
-
-    private static IntPtr GetSid(string stringSid)
-    {
-        if (!ConvertStringSidToSid(stringSid, out var sid) || sid == IntPtr.Zero)
-            throw new InvalidOperationException($"No se pudo convertir el SID {stringSid}");
-        return sid;
-    }
-
-    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool ConvertStringSidToSid(string stringSid, out IntPtr sid);
-
-    [DllImport("advapi32.dll", SetLastError = true)]
-    private static extern uint GetLengthSid(IntPtr sid);
 
     [DllImport("advapi32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
