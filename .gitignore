@@ -1,0 +1,110 @@
+## =======================================================================
+## .gitignore - Screen Recorder (.NET 10 / Windows Forms / WiX 4)
+## =======================================================================
+
+# -----------------------------------------------------------------------
+# Archivos de usuario, caches de entorno y del IDE
+# -----------------------------------------------------------------------
+.vs/
+.vscode/
+.idea/
+*.user
+*.userosscache
+*.suo
+*.userprefs
+*.sln.docstates
+*.rsuser
+
+# -----------------------------------------------------------------------
+# Salidas de compilación y publicación de .NET
+# -----------------------------------------------------------------------
+[Bb]in/
+[Oo]bj/
+**/[Bb]in/
+**/[Oo]bj/
+publish/
+**/publish/
+dist/
+**/dist/
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+arm/
+arm64/
+bld/
+[Tt]emp/
+[Tt]mp/
+
+# -----------------------------------------------------------------------
+# Paquetes NuGet y archivos cacheados generados
+# -----------------------------------------------------------------------
+*.nupkg
+*.snupkg
+**/packages/*
+!**/packages/build/
+*.nuget.props
+*.nuget.targets
+project.lock.json
+project.assets.json
+
+# -----------------------------------------------------------------------
+# WiX Toolset / Instaladores MSI / Salidas de empaquetado
+# -----------------------------------------------------------------------
+*.msi
+*.msm
+*.msp
+*.wixobj
+*.wixpdb
+.wix/
+
+# -----------------------------------------------------------------------
+# Binarios pesados externos (FFmpeg)
+# NOTA: WmvCoreHost.exe es el binario de FFmpeg (~211 MB).
+# No debe subirse a GitHub (supera el límite de 100 MB). Se descarga por separado.
+# -----------------------------------------------------------------------
+**/ffmpeg.exe
+**/ffprobe.exe
+**/ffplay.exe
+**/WmvCoreHost.exe
+
+# -----------------------------------------------------------------------
+# Grabaciones locales y bases de datos SQLite
+# -----------------------------------------------------------------------
+*.mp4
+*.recording.mp4
+*.mkv
+*.avi
+*.wav
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+uploads.db*
+
+# -----------------------------------------------------------------------
+# Logs de ejecución y volcados de memoria
+# -----------------------------------------------------------------------
+*.log
+[Ll]og/
+[Ll]ogs/
+*.dmp
+*.mdmp
+createdump.exe
+
+# -----------------------------------------------------------------------
+# Archivos del sistema operativo y copias temporales
+# -----------------------------------------------------------------------
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+*.tmp
+*.bak
+*.old
+*.orig
+*.swp
+*~

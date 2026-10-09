@@ -1,0 +1,57 @@
+# =======================================================================
+# .gitattributes - Screen Recorder (.NET 10 / Windows / WiX 4)
+# =======================================================================
+
+# Configuración global por defecto: autodetección de texto
+* text=auto
+
+# -----------------------------------------------------------------------
+# Archivos de código y scripts específicos de Windows
+# (Requieren terminaciones de línea CRLF)
+# -----------------------------------------------------------------------
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.cs text diff=csharp eol=crlf
+*.csproj text diff=csharp eol=crlf
+*.sln text eol=crlf
+*.wxs text eol=crlf
+*.wxi text eol=crlf
+*.wixproj text eol=crlf
+*.manifest text eol=crlf
+*.config text eol=crlf
+*.rtf text eol=crlf
+
+# -----------------------------------------------------------------------
+# Documentación, datos y configuración
+# -----------------------------------------------------------------------
+*.md text
+*.txt text
+*.json text
+*.xml text
+*.yml text
+*.yaml text
+.gitignore text
+.gitattributes text
+
+# -----------------------------------------------------------------------
+# Archivos binarios (sin conversión de fin de línea)
+# -----------------------------------------------------------------------
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary
+*.a binary
+*.msi binary
+*.pdb binary
+*.wixpdb binary
+*.ico binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.zip binary
+*.7z binary
+*.tar.gz binary
+*.mp4 binary
+*.db binary

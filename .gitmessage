@@ -1,0 +1,17 @@
+# <tipo>(<alcance opcional>): <descripción concisa en imperativo y minúsculas>
+#
+# Tipos permitidos:
+#   feat:     Nueva funcionalidad
+#   fix:      Corrección de errores
+#   docs:     Documentación (docs/, README, AGENTS)
+#   refactor: Refactorización sin cambio funcional
+#   perf:     Mejora de rendimiento
+#   build:    Compilación, dependencias, WiX, csproj, scripts
+#   chore:    Mantenimiento general, .gitignore, limpieza
+#   style:    Formato, espacios, linting
+#   test:     Pruebas y diagnósticos
+#
+# Recuerda:
+#   1. Los commits deben ser ATÓMICOS (un solo cambio lógico indivisible).
+#   2. No mezcles código con documentación ni refactors con features.
+#   3. El commit debe dejar la solución compilando limpiamente.
