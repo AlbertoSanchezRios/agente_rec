@@ -70,8 +70,8 @@ public class CapturePipelineProbe : ICapturePipelineProbe
         if (pref == 2)
         {
             _logger.LogInfo("Modo de captura: GDI forzado (sin parpadeo del cursor).");
-            var gdiForced = await TryGdiNvencAsync(region, scale, fps)
-                ?? await TryGdiQsvAsync(region, scale, fps)
+            var gdiForced = await TryGdiQsvAsync(region, scale, fps)
+                ?? await TryGdiNvencAsync(region, scale, fps)
                 ?? await TryGdiAmfAsync(region, scale, fps)
                 ?? await TryGdiX264Async(settings.CaptureTarget, region, scale, fps);
             var chosenGdi = gdiForced ?? new CapturePipeline(CaptureBackend.Gdi, 0, EncoderKind.X264, fps, region, scale, dupFrames);
@@ -86,8 +86,8 @@ public class CapturePipelineProbe : ICapturePipelineProbe
         if (settings.CaptureTarget == CaptureTarget.All)
         {
             _logger.LogInfo($"Target=All (varios monitores): se usa GDI para capturar toda la región {region.Size}.");
-            var gdi = await TryGdiNvencAsync(region, scale, fps)
-                ?? await TryGdiQsvAsync(region, scale, fps)
+            var gdi = await TryGdiQsvAsync(region, scale, fps)
+                ?? await TryGdiNvencAsync(region, scale, fps)
                 ?? await TryGdiAmfAsync(region, scale, fps)
                 ?? await TryGdiX264Async(settings.CaptureTarget, region, scale, fps);
             var chosenAll = gdi ?? new CapturePipeline(CaptureBackend.Gdi, 0, EncoderKind.X264, fps, region, scale, dupFrames);
@@ -104,16 +104,12 @@ public class CapturePipelineProbe : ICapturePipelineProbe
                 ?? await TryDdaNvencAsync(region, scale, outputIndex, fps, dupFrames)
                 ?? await TryDdaAmfAsync(region, scale, outputIndex, fps, dupFrames)
                 ?? await TryDdaX264Async(region, scale, outputIndex, fps, dupFrames)
-                ?? await TryGdiNvencAsync(region, scale, fps)
-                ?? await TryGdiQsvAsync(region, scale, fps)
-                ?? await TryGdiAmfAsync(region, scale, fps)
-                ?? await TryGdiX264Async(settings.CaptureTarget, region, scale, fps)
             : await TryDdaQsvAsync(region, scale, outputIndex, fps, dupFrames)
                 ?? await TryDdaNvencAsync(region, scale, outputIndex, fps, dupFrames)
                 ?? await TryDdaAmfAsync(region, scale, outputIndex, fps, dupFrames)
                 ?? await TryDdaX264Async(region, scale, outputIndex, fps, dupFrames)
-                ?? await TryGdiNvencAsync(region, scale, fps)
                 ?? await TryGdiQsvAsync(region, scale, fps)
+                ?? await TryGdiNvencAsync(region, scale, fps)
                 ?? await TryGdiAmfAsync(region, scale, fps)
                 ?? await TryGdiX264Async(settings.CaptureTarget, region, scale, fps);
 
