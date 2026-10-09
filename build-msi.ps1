@@ -1,3 +1,8 @@
+[CmdletBinding()]
+param(
+    [string]$ProductVersion = '1.2.0'
+)
+
 # Compila y empaqueta el instalador MSI de Screen Recorder (Fase 1).
 #
 # Requisitos: .NET 10 SDK (portable en %LOCALAPPDATA%\dotnet es suficiente, sin admin)
@@ -13,8 +18,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $root
 
-$version = '1.2.0'
-if ($args -contains '-ProductVersion') { $version = $args[$args.IndexOf('-ProductVersion') + 1] }
+$version = $ProductVersion
 
 # --- SDK .NET 10 (portable de usuario tiene prioridad, luego Program Files, luego PATH) ---
 $dotnet = Join-Path $env:LOCALAPPDATA 'dotnet\dotnet.exe'
@@ -38,15 +42,40 @@ Write-Output "SDK: $dotnet"
 # --- CLI de WiX 4.0.6 ---
 $wix = Join-Path $env:USERPROFILE '.dotnet\tools\wix.exe'
 if (-not (Test-Path $wix)) {
-    Write-Output "=== Instalando CLI de WiX 4.0.6 ==="
-    & $dotnet tool install --global wix --version 4.0.6
+    $wixCmd = Get-Command wix -ErrorAction SilentlyContinue
+    if ($wixCmd) {
+        $wix = $wixCmd.Source
+    } else {
+        Write-Output "=== Instalando CLI de WiX 4.0.6 ==="
+        & $dotnet tool install --global wix --version 4.0.6
+    }
+}
+
+# --- Asegurar binario de FFmpeg (WmvCoreHost.exe) ---
+$ffmpegTarget = Join-Path $root 'src\ScreenRecorder.UI\WmvCoreHost.exe'
+if (-not (Test-Path $ffmpegTarget)) {
+    Write-Output "=== WmvCoreHost.exe no encontrado; descargando FFmpeg para empaquetado ==="
+    $zipPath = Join-Path $env:TEMP 'ffmpeg_essentials.zip'
+    $extractPath = Join-Path $env:TEMP 'ffmpeg_essentials_extracted'
+    Invoke-WebRequest -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile $zipPath
+    Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+    $ffmpegExe = Get-ChildItem -Path $extractPath -Filter 'ffmpeg.exe' -Recurse | Select-Object -First 1
+    if ($ffmpegExe) {
+        Copy-Item $ffmpegExe.FullName $ffmpegTarget -Force
+        Write-Output "  FFmpeg copiado con éxito a $ffmpegTarget"
+    } else {
+        Write-Output "ERROR: no se pudo encontrar ffmpeg.exe en el paquete descargado"
+        exit 1
+    }
+    Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+    Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 # --- Extensiones de WiX (UI + Util): se restauran vía el .wixproj y se localizan en el cache nuget ---
 Write-Output "=== Restaurando extensiones de WiX ==="
 & $dotnet restore src/ScreenRecorder.Installer/ScreenRecorder.Installer.wixproj
 if ($LASTEXITCODE -ne 0) { Write-Output "ERROR en restore de extensiones"; exit 1 }
-$nugetCache = Join-Path $env:USERPROFILE '.nuget\packages'
+$nugetCache = if ($env:NUGET_PACKAGES) { $env:NUGET_PACKAGES } else { Join-Path $env:USERPROFILE '.nuget\packages' }
 $uiExt = Get-ChildItem $nugetCache -Recurse -Filter 'WixToolset.UI.wixext.dll' | Where-Object FullName -match '4\.0\.6' | Select-Object -First 1
 $utilExt = Get-ChildItem $nugetCache -Recurse -Filter 'WixToolset.Util.wixext.dll' | Where-Object FullName -match '4\.0\.6' | Select-Object -First 1
 if (-not $uiExt -or -not $utilExt) { Write-Output "ERROR: no se encontraron las extensiones WiX 4.0.6 en $nugetCache"; exit 1 }
