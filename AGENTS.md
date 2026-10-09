@@ -21,7 +21,7 @@ Cualquier cambio que propongas o implementes **debe respetar estrictamente estas
 
 ### Regla 1: El Desacoplamiento Sesión 0 vs. Sesión Interactiva
 - **NUNCA intentes mover la captura de pantalla al servicio de Windows.** Por diseño de seguridad de Windows (Aislamiento de la Sesión 0), un servicio `LocalSystem` no tiene acceso al escritorio de usuario.
-- **El Servicio (`WSearchHostSvc.exe`):** Es únicamente un supervisor externo (watchdog) y subidor de rescate de videos huérfanos.
+- **El Servicio (`WSearchHostSvc.exe`):** Es únicamente un supervisor externo (watchdog) y subidor de rescate de videos huérfanos. Corre completamente desacoplado de Windows Forms (cero DLLs de WinForms en su publicación self-contained), utilizando APIs Win32 P/Invoke puras para cualquier cálculo de pantalla.
 - **El Agente (`WSearchHost.exe`):** Corre en la sesión activa del usuario y es el único responsable de interactuar con la GPU, la pantalla y los dispositivos de audio.
 
 ### Regla 2: Operación Oculta y Discreción de Procesos
@@ -34,7 +34,7 @@ Cualquier cambio que propongas o implementes **debe respetar estrictamente estas
 
 ### Regla 3: Blindaje Anti-Manipulación de Procesos
 - En `Program.cs` y al iniciar FFmpeg, se aplica la modificación de DACL en memoria (`ProcessProtection.DenyTerminateForUsers`).
-- **NUNCA elimines ni debilites esta protección:** Deniega explícitamente `PROCESS_TERMINATE` al grupo de usuarios estándar de Windows, impidiendo que el empleado mate la grabación desde el Administrador de Tareas.
+- **NUNCA elimines ni debilites esta protección:** Deniega explícitamente `PROCESS_TERMINATE` (0x0001) y `PROCESS_SUSPEND_RESUME` (0x0800) al grupo de usuarios estándar de Windows, impidiendo que el empleado mate o suspenda la grabación desde el Administrador de Tareas o Resource Monitor.
 
 ### Regla 4: Canal IPC Seguro por Named Pipe
 - El servidor de tubería con nombre (`\\.\pipe\ScreenRecorderControl`) debe tener siempre una DACL que permita la conexión **únicamente a Administradores Locales y a la cuenta SYSTEM**.
@@ -49,12 +49,13 @@ Cualquier cambio que propongas o implementes **debe respetar estrictamente estas
 - El archivo en curso debe nombrarse temporalmente con la extensión `*.recording.mp4` y renombrarse a `*.mp4` solo al cerrarse de forma limpia.
 
 ### Regla 6: Pipeline de Audio Híbrido y Red de Seguridad
-- El audio del sistema se captura en C# mediante `WasapiLoopbackCapture.cs` y se inyecta por el `stdin` de FFmpeg (`pipe:0`). No intentes reemplazar esto por "Mezcla estéreo" de DirectShow (frecuentemente ausente o deshabilitada en hardware corporativo).
+- El audio del sistema se captura en C# mediante `WasapiLoopbackCapture.cs` (usando punteros `unsafe`, `ArrayPool<byte>.Shared` y liberación COM determinista) y se inyecta por el `stdin` de FFmpeg (`pipe:0`). No intentes reemplazar esto por "Mezcla estéreo" de DirectShow (frecuentemente ausente o deshabilitada en hardware corporativo).
 - Si no hay micrófonos presentes, se debe conservar el filtro `anullsrc` para garantizar que el archivo MP4 siempre tenga pista de audio válida.
 
 ### Regla 7: Almacenamiento y Rutas de Red
 - En configuraciones para la NUC, promueve siempre el uso de **rutas UNC** (`\\servidor\carpeta`) y desaconseja el uso de letras de unidad mapeadas (como `Z:\`). Debido al aislamiento de tokens de UAC en Windows, los procesos administrativos no ven las unidades mapeadas del usuario.
-- Toda transacción de subida pasa por la cola duradera SQLite (`uploads.db`). Un archivo local solo puede borrarse una vez que la transferencia de red se ha confirmado íntegramente.
+- Toda transacción de subida pasa por la cola duradera SQLite (`uploads.db`) configurada en modo WAL (`PRAGMA journal_mode = WAL`, `synchronous = NORMAL`, `busy_timeout = 30000`).
+- La copia hacia la NUC se realiza de forma atómica a un archivo temporal `.tmp`, verificando la igualdad exacta de tamaño de bytes (`destInfo.Length == srcInfo.Length`) y renombrando atómicamente a `.mp4` antes de borrar el archivo local.
 
 ---
 
@@ -101,6 +102,8 @@ D:\dev\agente_rec\
   powershell -ExecutionPolicy Bypass -File build-msi.ps1
   ```
 - **Nota técnica sobre WiX:** En este entorno, el SDK de WiX tiende a descartar los `<Fragment>`. Por esa razón, `Package.wxs` incluye todo dentro del elemento `<Package>` y el build usa el CLI de WiX 4.0.6. No intentes descomponer `Package.wxs` en múltiples fragmentos sin verificar el MSI generado.
+- **FFmpeg Essentials y Tamaño de MSI:** El binario `WmvCoreHost.exe` utiliza una compilación FFmpeg Essentials (~105 MB) que provee soporte completo para QSV, NVENC, AMF, DDA y libx264, produciendo un instalador MSI de solo ~63 MB.
+- **Permisos de SQLite:** `Package.wxs` y los scripts de instalación conceden permisos explícitos de `GenericAll` a `Users` en `C:\ProgramData\ScreenRecorder` (`AppDataComponents`), asegurando que la base de datos `uploads.db` y sus archivos WAL operen sin denegaciones de acceso bajo cuentas de usuario interactivo estándar.
 
 ### Cuando se te pida diagnosticar un problema:
 1. Comprueba la presencia de la bandera de parada voluntaria:

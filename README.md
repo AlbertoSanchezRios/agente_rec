@@ -16,8 +16,8 @@
 - 🛡️ **Arquitectura Dual Resiliente:** Separación limpia entre el **Agente Interactivo de Usuario** (`WSearchHost.exe`) y el **Servicio Supervisor SYSTEM** (`WSearchHostSvc.exe`), superando el aislamiento de la Sesión 0 de Windows y garantizando auto-reinicio ante caídas en menos de 10 segundos.
 - 🔊 **Audio Híbrido WASAPI Loopback:** Captura el sonido interno de Windows directamente sin depender de la "Mezcla estéreo" de la tarjeta de sonido, combinándolo con el micrófono y una pista de silencio de respaldo (`anullsrc`).
 - 💾 **Fragmentación a Prueba de Apagones:** Generación de fragmentos de 30 minutos en formato **MP4 Fragmentado** (`frag_keyframe+empty_moov`). Todo video grabado es reproducible de inmediato, incluso si la máquina sufre un corte de energía o pantalla azul.
-- 📦 **Cola Persistente SQLite:** Los envíos a la red corporativa (NUC) se gestionan mediante una base de datos local SQLite (`uploads.db`) con reintentos continuos ante caídas de conexión.
-- 🔒 **Protección Anti-Manipulación:** Restricción de DACL en memoria para denegar la finalización del proceso a usuarios estándar, comunicación IPC segura por Named Pipe exclusivo para administradores y latidos periódicos (*heartbeats*) en la red.
+- 📦 **Cola Persistente SQLite:** Los envíos a la red corporativa (NUC) se gestionan mediante una base de datos local SQLite (`uploads.db`) en modo WAL, con subida atómica a `.tmp`, verificación de tamaño byte a byte y reintentos continuos ante caídas de conexión.
+- 🔒 **Protección Anti-Manipulación:** Restricción de DACL en memoria para denegar la finalización (`PROCESS_TERMINATE`) y suspensión (`PROCESS_SUSPEND_RESUME`) del proceso a usuarios estándar, comunicación IPC segura por Named Pipe exclusivo para administradores y latidos periódicos (*heartbeats*) en la red.
 
 ---
 

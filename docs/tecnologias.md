@@ -20,7 +20,7 @@ El núcleo de la solución ha sido actualizado a la versión más moderna y efic
 ## 2. Motor de Procesamiento Multimedia
 
 ### **FFmpeg (Distribuido bajo la identidad discreta `WmvCoreHost.exe`)**
-El motor de captura, filtrado y compresión de video es una compilación optimizada de FFmpeg de 64 bits para Windows:
+El motor de captura, filtrado y compresión de video es una compilación optimizada **FFmpeg Essentials** de 64 bits para Windows (~105 MB, reduciendo más de 115 MB de huella frente a compilaciones completas):
 
 #### Encoders y Módulos de Captura Utilizados:
 1. **Captura de Pantalla DXGI (`ddagrab`):**
@@ -30,11 +30,13 @@ El motor de captura, filtrado y compresión de video es una compilación optimiz
 2. **Aceleración por Hardware Intel QuickSync (`h264_qsv`):**
    - Utiliza el silicio dedicado de las CPUs Intel para codificar video H.264 en tiempo real.
    - Registra un consumo mínimo de CPU (~1.5% a 2%).
-3. **Encoder por Software de Respaldo (`libx264`):**
+3. **Aceleración por Hardware NVIDIA NVENC (`h264_nvenc`) y AMD AMF (`h264_amf`):**
+   - Soporte automático para tarjetas gráficas dedicadas NVIDIA y AMD.
+4. **Encoder por Software de Respaldo (`libx264`):**
    - Preset `ultrafast`, `crf 28`. Proporciona un plan B ultraestable para computadoras sin GPU compatible o en entornos virtualizados (RDP / VDI).
-4. **Captura por Software de Respaldo (`gdigrab`):**
-   - Respaldo para escenarios donde DXGI no está disponible.
-5. **Multiplexor de Archivos MP4 Fragmentados (`-movflags frag_keyframe+empty_moov`):**
+5. **Captura por Software de Respaldo (`gdigrab`):**
+   - Respaldo para escenarios multimonitor combinados o donde DXGI no está disponible.
+6. **Multiplexor de Archivos MP4 Fragmentados (`-movflags frag_keyframe+empty_moov`):**
    - Escribe átomos de índice periódicos en el archivo MP4.
    - Garantiza que los videos no se corrompan ante apagados bruscos o fallos de corriente.
 
@@ -50,6 +52,10 @@ Para capturar simultáneamente el sonido del sistema operativo y la voz del empl
   - `IMMDeviceEnumerator` (enumeración de tarjetas de sonido por defecto).
   - `IAudioClient` (inicialización en modo bucle de retorno o loopback).
   - `IAudioCaptureClient` (lectura de buffers PCM sin latencia).
+- **Optimización Extrema de Rendimiento:**
+  - Conversión de muestras float IEEE a PCM 16-bit mediante punteros nativos `unsafe` (`float*` a `short*`), eliminando llamadas de marshalling (`Marshal.PtrToStructure`).
+  - Uso de `ArrayPool<byte>.Shared.Rent/Return` para el buffer de intercambio, eliminando alocaciones recurrentes en el montículo del GC.
+  - Liberación determinista de objetos COM con `Marshal.ReleaseComObject` en el descarte para evitar retenciones de recursos del subsistema de audio.
 - El sonido se entrega en formato PCM estéreo de 16 bits a 48.000 Hz directamente hacia el `stdin` de FFmpeg (`pipe:0`).
 - **Ventaja decisiva:** No requiere habilitar "Mezcla estéreo" ni instalar drivers de audio virtuales como Virtual Audio Cable.
 
@@ -68,26 +74,32 @@ Para capturar simultáneamente el sonido del sistema operativo y la voz del empl
 - **Ventajas:**
   - Base de datos relacional transaccional embebida en un único archivo.
   - Soporta transacciones atómicas seguras contra fallos (ACID).
-  - Configurado con `Default Timeout=30` y `Cache=Shared` para permitir lecturas y escrituras concurrentes seguras entre el agente de usuario y el servicio supervisor.
+  - Configurado en modo **WAL (Write-Ahead Logging)** con:
+    ```sql
+    PRAGMA journal_mode = WAL;
+    PRAGMA synchronous = NORMAL;
+    PRAGMA busy_timeout = 30000;
+    ```
+    Permite lecturas concurrentes sin bloqueo por escrituras y elimina los conflictos de concurrencia entre el agente de usuario y el servicio supervisor.
 
 ### **Registro de Windows (`Microsoft.Win32.Registry`)**
 - **Uso:** Almacén central de configuración en `HKLM\SOFTWARE\ScreenRecorder`.
 - **Ventajas:** Integrado en el sistema operativo, resistente a borrados accidentales de archivos por parte de usuarios y protegido por las listas de control de acceso de Windows.
 
-### **Newtonsoft.Json**
-- Serialización y deserialización de la clase `RecordingSettings` con validación estricta de esquemas y valores predeterminados seguros.
+### **System.Text.Json**
+- Serialización y deserialización nativa de alto rendimiento de .NET 10 para `RecordingSettings`, con validación estricta de esquemas y sin dependencias de paquetes de terceros.
 
 ---
 
 ## 5. Integración con el Sistema Operativo y Win32 P/Invoke
 
-El sistema utiliza varias bibliotecas dinámicas del sistema operativo (DLLs de Windows) para ejecutar operaciones de bajo nivel:
+El sistema utiliza varias bibliotecas dinámicas del sistema operativo (DLLs de Windows) para ejecutar operaciones de bajo nivel sin depender de Windows Forms en el núcleo ni en el servicio:
 
 | Biblioteca Win32 | Funciones Utilizadas | Propósito en Screen Recorder |
 |---|---|---|
 | **`wtsapi32.dll`** | `WTSQueryUserToken`, `WTSGetActiveConsoleSessionId`, `WTSFreeMemory` | Permite al servicio SYSTEM obtener el token de seguridad de la sesión activa de escritorio para lanzar el agente interactivo. |
 | **`advapi32.dll`** | `CreateProcessAsUser`, `SetKernelObjectSecurity`, `GetKernelObjectSecurity` | Crea procesos en el escritorio del usuario y modifica las listas de control de acceso (DACL) para impedir que el usuario finalice el proceso. |
-| **`user32.dll`** | `EnumDisplaySettings`, `GetSystemMetrics` | Consulta la resolución nativa de cada monitor físico conectado. |
+| **`user32.dll`** | `EnumDisplayMonitors`, `GetMonitorInfo`, `EnumDisplaySettings`, `GetSystemMetrics` | Enumeración nativa y cálculo geométrico de monitores físicos conectados sin requerir el runtime de Windows Forms. |
 | **`shcore.dll`** | `GetDpiForMonitor` | Determina el factor de escala real (DPI) de cada pantalla para calcular coordenadas de captura sin recortes. |
 | **`System.ServiceProcess`** | `ServiceBase`, `ServiceController` | Implementación nativa del servicio supervisor de Windows (`WSearchHostSvc`). |
 
@@ -96,12 +108,12 @@ El sistema utiliza varias bibliotecas dinámicas del sistema operativo (DLLs de 
 ## 6. Empaquetado y Distribución Empresarial
 
 ### **WiX Toolset 4.0.6**
-El instalador MSI se genera con WiX Toolset 4:
+El instalador MSI se genera con WiX Toolset 4 produciendo un paquete optimizado de ~63 MB:
 - Empaquetado estructurado mediante el archivo de manifiesto `Package.wxs`.
 - Inclusión dinámica de componentes harvesteados mediante `GeneratedComponents.wxi`.
 - Uso de extensiones oficiales:
   - `WixToolset.UI.wixext`: Asistente gráfico de bienvenida y licencia.
-  - `WixToolset.Util.wixext`: Creación segura de carpetas compartidas y asignación de permisos de escritura a usuarios locales en `ProgramData\ScreenRecorder\Logs`.
+  - `WixToolset.Util.wixext`: Creación segura de carpetas compartidas y asignación de permisos `GenericAll` a usuarios locales (`AppDataComponents`) en `ProgramData\ScreenRecorder` y `Logs`, permitiendo la creación y escritura de `uploads.db` y archivos de log desde la sesión interactiva no elevada.
 - Acciones personalizadas diferidas (`CustomAction`) que garantizan la actualización limpia de binarios sin bloqueos de archivos en uso.
 
 ---

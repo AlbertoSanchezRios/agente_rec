@@ -24,12 +24,22 @@ Esta skill define los protocolos para auditar, gestionar y resolver incidencias 
   1. Durante la captura: el archivo se nombra `[nombre].recording.mp4`.
   2. Al completar el fragmento de forma limpia: se renombra a `[nombre].mp4`.
   3. Si ocurre un corte de luz o apagón brusco: el archivo `.recording.mp4` sigue siendo reproducible hasta el último segundo capturado gracias al contenedor fragmentado. Al volver a encender, el servicio supervisor o el agente lo detecta, lo renombra a `.mp4` y lo sube.
-- **Validación de Integridad (`IsValidMp4`):**
-  Un archivo solo se transfiere si tiene un tamaño superior a 1024 bytes y los bytes 4 al 7 corresponden a la firma ASCII `ftyp`. Fragmentos corruptos o vacíos se descartan para no ensuciar el almacenamiento central.
+- **Validación de Integridad y Copia Atómica (`FileManagementService`):**
+  1. Un archivo solo se procesa si tiene un tamaño superior a 1024 bytes y los bytes 4 al 7 corresponden a la firma ASCII `ftyp`. Fragmentos corruptos se descartan para no ensuciar el almacenamiento central.
+  2. La transferencia remota se realiza copiando a un archivo temporal `.tmp` en el destino SMB (`destPath + ".tmp"`).
+  3. Se verifica byte por byte que el tamaño del archivo remoto coincida con el local (`destInfo.Length == srcInfo.Length`).
+  4. Se ejecuta un renombramiento atómico a la extensión definitiva: `File.Move(tmpPath, destPath, overwrite: true)`.
+  5. **Solo tras confirmar la integridad y el renombramiento**, se elimina el archivo local original. En caso de error o discrepancia de tamaño, el archivo `.tmp` remoto se limpia y el fragmento local se preserva para un reintento futuro.
 
 ### Cola Duradera SQLite (`uploads.db`)
 - Ubicación: `C:\ProgramData\ScreenRecorder\uploads.db`.
-- Almacena rutas de fragmentos pendientes de subida con control de reintentos exponenciales y modo WAL.
+- Configurada en modo **WAL (Write-Ahead Logging)**:
+  ```sql
+  PRAGMA journal_mode = WAL;
+  PRAGMA synchronous = NORMAL;
+  PRAGMA busy_timeout = 30000;
+  ```
+- Permite lecturas y escrituras simultáneas y sin bloqueos entre el agente interactivo y el servicio supervisor en Sesión 0.
 - Si la máquina se desconecta de la red de la empresa (o el usuario sale de viaje), los videos se acumulan localmente y el drenador en caliente los sube automáticamente cada 2 minutos en cuanto se restablece la ruta de red.
 
 ### Protocolo de Apagado Rápido de Windows

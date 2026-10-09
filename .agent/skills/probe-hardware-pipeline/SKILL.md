@@ -30,6 +30,8 @@ El sondeo automático (`CapturePipelineProbe`) evalúa los encoders en el siguie
 
 ### Pipeline de Audio Híbrido
 - **WASAPI Loopback (C#):** Captura PCM del dispositivo de reproducción por defecto mediante `WasapiLoopbackCapture.cs` y lo transmite directamente al `stdin` de FFmpeg (`pipe:0`). No depende de la existencia de "Mezcla estéreo".
+  - **Optimización de Memoria y CPU:** Emplea punteros nativos `unsafe` para la conversión directa de coma flotante a PCM de 16 bits sin marshalling y utiliza `ArrayPool<byte>.Shared` para reutilizar buffers de transferencia sin generar recolección de basura (GC).
+  - **Higiene COM:** Implementa liberación explícita con `Marshal.ReleaseComObject` para todos los interfaces COM de audio al detener la captura.
 - **Filtro de Respaldo Silencioso:** Si no hay ningún dispositivo de audio presente en el equipo, se inyecta `-f lavfi -i anullsrc=r=48000:cl=stereo` para asegurar que el archivo MP4 siempre contenga una pista de audio válida.
 
 ---

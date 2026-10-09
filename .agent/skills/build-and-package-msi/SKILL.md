@@ -13,8 +13,8 @@ Esta skill define el procedimiento estándar, exhaustivo e inviolable para compi
 
 Screen Recorder se distribuye como un paquete MSI per-machine de 64 bits (`win-x64`) que no requiere ningún runtime previo en la máquina cliente:
 - **`WSearchHost.exe`**: Agente interactivo de usuario (UI invisible WinForms en `publish/msi`).
-- **`WSearchHostSvc.exe`**: Servicio supervisor watchdog en `LocalSystem` (en `publish/msi`).
-- **`WmvCoreHost.exe`**: Binario FFmpeg con aceleración por hardware (QSV, NVENC, AMF).
+- **`WSearchHostSvc.exe`**: Servicio supervisor watchdog en `LocalSystem` (en `publish/msi`, desacoplado de WinForms).
+- **`WmvCoreHost.exe`**: Binario FFmpeg Essentials (~105 MB) con aceleración por hardware (QSV, NVENC, AMF, ddagrab).
 - **WiX 4.0.6 CLI**: Utilizado directamente mediante `wix.exe build` debido a que el SDK de WiX en .NET tiende a descartar elementos `<Fragment>` en compilaciones multinivel.
 
 ---
@@ -25,6 +25,7 @@ Screen Recorder se distribuye como un paquete MSI per-machine de 64 bits (`win-x
 2. **Harvest en Archivo Único (`GeneratedComponents.wxi`):** Todos los DLLs y dependencias satélite se cosechan dinámicamente en `src/ScreenRecorder.Installer/GeneratedComponents.wxi` y se incluyen dentro del `ComponentGroup` principal en `Package.wxs`.
 3. **Exclusiones Explícitas del Harvest:** Binarios principales con declaración explícita de servicio o atajos (`WSearchHost.exe`, `WSearchHostSvc.exe`, `WmvCoreHost.exe`, scripts `.bat` y `.ps1`) deben quedar excluidos de `GeneratedComponents.wxi` para evitar conflictos de identificador o GUID duplicados en la base de datos MSI.
 4. **Limpieza Previa Obligatoria:** Siempre purgar `publish/msi` antes de un nuevo publish para evitar que restos de compilaciones anteriores o scripts deprecados contaminen el instalador final.
+5. **Permisos Explícitos de AppData (`AppDataComponents`):** Conceder permisos `GenericAll` a `Users` en `C:\ProgramData\ScreenRecorder` en `Package.wxs` para garantizar que la base de datos `uploads.db` y sus archivos WAL funcionen sin errores de acceso denegado en la sesión de usuario.
 
 ---
 
@@ -91,7 +92,7 @@ powershell -ExecutionPolicy Bypass -File .\build-msi.ps1 -ProductVersion 1.2.0
 ## 4. Verificación de Integridad del MSI
 
 Al finalizar el empaquetado, validar:
-1. El archivo `dist/ScreenRecorder-1.2.0.msi` existe y tiene un tamaño coherente (~230 MB incluyendo runtime y FFmpeg).
+1. El archivo `dist/ScreenRecorder-1.2.0.msi` existe y tiene un tamaño coherente (~63 MB incluyendo runtime de .NET 10 y FFmpeg Essentials).
 2. Verificación de tablas con msiexec o herramientas de inspección:
    - Tabla `ServiceInstall` contiene `WSearchHostSvc`.
    - Clave de autoarranque en `SOFTWARE\Microsoft\Windows\CurrentVersion\Run`.

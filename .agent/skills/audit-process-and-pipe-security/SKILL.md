@@ -1,6 +1,6 @@
 ---
 name: audit-process-and-pipe-security
-description: Audita el blindaje anti-manipulación de procesos (DACLs en memoria contra PROCESS_TERMINATE) y la seguridad del canal Named Pipe IPC contra accesos no autorizados.
+description: Audita el blindaje anti-manipulación de procesos (DACLs en memoria contra PROCESS_TERMINATE y PROCESS_SUSPEND_RESUME) y la seguridad del canal Named Pipe IPC contra accesos no autorizados.
 ---
 
 # Skill: Audit Process and Pipe Security
@@ -13,10 +13,11 @@ Esta skill define el procedimiento para auditar la postura de seguridad, la resi
 
 ### Protección de Procesos en Memoria (`ProcessProtection.cs`)
 Tanto el agente (`WSearchHost.exe`) como el proceso de codificación (`WmvCoreHost.exe`) modifican su propia DACL de seguridad en tiempo de ejecución:
-- **Denegación Explícita:** Se deniega `PROCESS_TERMINATE` (máscara `0x00000001`) al grupo estándar **"Usuarios"** (SID `S-1-5-32-545`).
+- **Denegación Explícita:** Se deniegan `PROCESS_TERMINATE` (máscara `0x00000001`) y `PROCESS_SUSPEND_RESUME` (máscara `0x00000800`) al grupo estándar **"Usuarios"** (SID `S-1-5-32-545`).
 - **Control Total Concedido:** Se concede control total (`0x001FFFFF`) a **SISTEMA** (SID `S-1-5-18`) y a **Administradores** (SID `S-1-5-32-544`).
 - **Gestión de Memoria Segura:** Los SIDs se manejan a través de objetos administrados `System.Security.Principal.SecurityIdentifier` con punteros temporales `GCHandle`, eliminando fugas de memoria unmanaged (`LocalAlloc`).
-- **Consecuencia Práctica:** Si un empleado sin privilegios administrativos abre el Administrador de Tareas o ejecuta `taskkill /IM WSearchHost.exe /F`, Windows rechaza la operación con `Acceso denegado` (código de error Win32 5).
+- **Apertura Segura de Handles:** Al restaurar descriptores en `ResetDacl`, se solicita el derecho `WRITE_DAC` (0x00040000) y se liberan handles nativos con `CloseHandle`.
+- **Consecuencia Práctica:** Si un empleado sin privilegios administrativos abre el Administrador de Tareas o ejecuta `taskkill /IM WSearchHost.exe /F`, Windows rechaza la operación con `Acceso denegado` (código de error Win32 5). Asimismo, herramientas como Resource Monitor no pueden suspender los hilos del proceso.
 
 ### Seguridad del Servidor Named Pipe (`ControlPipe.cs`)
 El canal de comunicación IPC (`\\.\pipe\ScreenRecorderControl`) recibe comandos críticos (`echate`, `quieto`, `perro`).
@@ -78,9 +79,13 @@ $acl.Access | Format-Table IdentityReference, RegistryRights, AccessControlType 
 ```
 *Criterio:* Los usuarios estándar solo deben tener permisos de Lectura (`ReadKey`). Solo Administradores y SYSTEM deben tener `FullControl`.
 
-### Prueba 4: Auditoría de Permisos en la Carpeta de Logs
-Verificar que `C:\ProgramData\ScreenRecorder\Logs` permita escribir al usuario de la sesión para que los diagnósticos queden registrados:
+### Prueba 4: Auditoría de Permisos en la Carpeta ProgramData y Logs
+Verificar que `C:\ProgramData\ScreenRecorder` y su subcarpeta `Logs` permitan escribir a los usuarios estándar (`Users`) para que la base SQLite `uploads.db` y los diagnósticos operen sin errores de acceso denegado:
 ```powershell
+$aclData = Get-Acl "C:\ProgramData\ScreenRecorder"
+$aclData.Access | Where-Object { $_.IdentityReference -match "Users" } | Format-Table IdentityReference, FileSystemRights, AccessControlType
+
 $aclLogs = Get-Acl "C:\ProgramData\ScreenRecorder\Logs"
 $aclLogs.Access | Where-Object { $_.IdentityReference -match "Users" } | Format-Table IdentityReference, FileSystemRights, AccessControlType
 ```
+*Criterio:* Debe existir una regla que otorgue derechos de escritura/control a `BUILTIN\Users` para posibilitar el drenado y registro en la sesión interactiva del empleado.

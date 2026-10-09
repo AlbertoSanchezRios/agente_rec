@@ -53,6 +53,8 @@ La clase de .NET `Microsoft.Win32.SystemEvents` **requiere obligatoriamente una 
 - La aplicación consume prácticamente 0% de CPU en reposo.
 - Para el usuario es completamente indetectable.
 
+> **Desacoplamiento Estricto de Sesión 0:** Windows Forms se utiliza **únicamente** en `ScreenRecorder.UI` para mantener este hilo STA de mensajes (`MainForm.cs`) y la ventana de configuración (`SettingsForm.cs`). Los proyectos `ScreenRecorder.Core` y `ScreenRecorder.Service` no tienen ninguna referencia a Windows Forms (`<UseWindowsForms>` fue completamente removido), garantizando que el servicio supervisor en Sesión 0 (`WSearchHostSvc.exe`) corra sin librerías de UI innecesarias, ahorrando ~22 MB de memoria en runtime.
+
 ---
 
 ## 4. Comunicación Inter-Procesos (IPC) y Seguridad de Tuberías
@@ -92,14 +94,14 @@ En Screen Recorder, el Named Pipe se crea con una lista de control de acceso (DA
 
 ## 5. Geometría de Pantalla y Soporte Multimonitor Consciente de DPI
 
-Uno de los problemas más complejos en la captura de escritorio en Windows es el escalado de pantalla (DPI). Con la llegada de monitores 2K y 4K, es muy común que Windows aplique un escalado del 125%, 150% o 200%.
+Uno de los problemas más complejos en la captura de escritorio en Windows es el escalado de pantalla (DPI). Con la llegada de monitores 2K y4K, es muy común que Windows aplique un escalado del 125%, 150% o 200%.
 
 ### El Error Común: Coordenadas Lógicas vs. Físicas
 Si una aplicación no está configurada como DPI-Aware, Windows virtualiza las coordenadas. Una pantalla de 1920x1080 al 150% se reporta a la aplicación como 1280x720. Si luego se pasa ese valor a FFmpeg, este captura únicamente un recorte de 1280x720 (la esquina superior izquierda de la pantalla), dejando el resto fuera de cuadro.
 
 ### Solución Diseñada en `ScreenGeometryService.cs`:
 1. La aplicación activa el modo **`HighDpiMode.PerMonitorV2`** en `Program.cs`.
-2. Al calcular el área de captura, se combinan las dimensiones de `Screen.AllScreens` con la llamada Win32 a `GetDpiForMonitor`.
+2. Al calcular el área de captura, `ScreenGeometryService.cs` utiliza directamente las APIs Win32 nativas `EnumDisplayMonitors` y `GetMonitorInfo` combinadas con `GetDpiForMonitor`, eliminando por completo cualquier dependencia de `Screen.AllScreens` de Windows Forms en el núcleo.
 3. Se calculan las coordenadas y resolución en **píxeles físicos reales**.
 4. En lugar de recortar el video con `-video_size`, el comando de FFmpeg toma el área completa y la escala limpiamente con el filtro `scale`:
    ```bash
@@ -118,7 +120,7 @@ La subida de archivos de video a la NUC requería un mecanismo transaccional que
                   │
                   ▼
 ┌────────────────────────────────────────────────────────┐
-│ SQLite: ProgramData\ScreenRecorder\uploads.db          │
+│ SQLite: ProgramData\ScreenRecorder\uploads.db (WAL)    │
 │ ────────────────────────────────────────────────────── │
 │ Columnas:                                              │
 │ - Id (INTEGER PRIMARY KEY)                             │
@@ -129,16 +131,21 @@ La subida de archivos de video a la NUC requería un mecanismo transaccional que
 │ - NextAttempt (DATETIME)                               │
 └────────────────────────────────────────────────────────┘
                   │
-                  ├── Intento de subida a la NUC
+                  ├── Copia atómica a destino remoto: video.mp4.tmp
+                  ├── Verificación estricta: dest.Length == src.Length
+                  ├── Renombrado atómico: File.Move(tmp, dest, overwrite: true)
                   ├── ¿Éxito? ──► Elimina registro de SQLite y borra archivo local.
-                  └── ¿Fallo? ──► Incrementa Attempts, calcula backoff exponencial.
+                  └── ¿Fallo? ──► Limpia .tmp remoto, incrementa Attempts, backoff exponencial.
 ```
 
 ### Características de Robustez en la Base de Datos:
-- **Concurrencia entre Procesos:** Tanto el agente de usuario como el servicio supervisor pueden interactuar con la base de datos. Para evitar errores de bloqueo (`SQLITE_BUSY`), la cadena de conexión implementa:
-  ```csharp
-  "Data Source=uploads.db;Default Timeout=30;Cache=Shared"
+- **Concurrencia en Modo WAL (Write-Ahead Logging):** Para permitir lecturas y escrituras simultáneas entre el agente interactivo y el servicio supervisor sin bloqueos ni contención de base de datos (`SQLITE_BUSY`), la conexión se inicializa con:
+  ```sql
+  PRAGMA journal_mode = WAL;
+  PRAGMA synchronous = NORMAL;
+  PRAGMA busy_timeout = 30000;
   ```
+  Se removió `Cache=Shared` para evitar retenciones de caché inconsistentes entre diferentes procesos.
 - **Disyuntor Integrado (Circuit Breaker):** Si la base de datos sufre 3 fallos consecutivos (por ejemplo, si el archivo SQLite sufre corrupción en disco por una falla de sectores), el sistema conmuta automáticamente al **Modo Directo**. En modo directo, el servicio omite la base de datos y escanea los archivos directamente en el disco para subirlos, asegurando que ningún video se quede atrapado.
 
 ---

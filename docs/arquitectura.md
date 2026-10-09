@@ -66,24 +66,24 @@ Esta separación otorga lo mejor de los dos mundos:
 La solución `ScreenRecorder.sln` se estructura en cuatro proyectos bien delimitados, bajo **.NET 10.0**:
 
 ### 1. `ScreenRecorder.Core` (`src/ScreenRecorder.Core/`)
-Es la espina dorsal del sistema. Es una biblioteca de clases compilada para `net10.0-windows` que contiene toda la lógica de negocio, abstracciones de hardware, acceso a disco y algoritmos de recuperación:
+Es la espina dorsal del sistema. Es una biblioteca de clases compilada para `net10.0-windows` (completamente desacoplada de Windows Forms, sin depender de librerías gráficas de escritorio) que contiene toda la lógica de negocio, abstracciones de hardware, acceso a disco y algoritmos de recuperación:
 - **`Models/`:** 
   - `RecordingSettings.cs`: Configuración de la aplicación (resolución, FPS, bitrate, rutas de red, audio, retención).
   - `CaptureTarget.cs`: Información de monitores y displays físicos detectados.
   - `AudioDevice.cs`: Modelado de fuentes de sonido (sistema, micrófonos USB/DirectShow).
 - **`Audio/`:**
-  - `WasapiLoopbackCapture.cs`: Captura nativa de audio del sistema en C# mediante las APIs COM de Windows Audio Session API (WASAPI) en modo loopback. Escribe el PCM directamente al flujo de entrada de FFmpeg.
+  - `WasapiLoopbackCapture.cs`: Captura nativa de audio del sistema en C# mediante las APIs COM de Windows Audio Session API (WASAPI) en modo loopback, implementada con punteros `unsafe`, `ArrayPool<byte>.Shared` y liberación determinista de RCW para eliminar fugas COM y pausas de recolección de basura. Escribe el PCM directamente al flujo de entrada de FFmpeg.
 - **`Services/`:**
   - `RecordingService.cs`: Orquestador directo de la invocación de FFmpeg, división en fragmentos de 30 minutos, manejo de procesos hijo y tiempos de guardia.
   - `RecordingManagerService.cs`: Máquina de estados reactiva. Conecta los eventos del sistema operativo (inicio de sesión, bloqueo de pantalla, apagado) con el ciclo de vida de la grabación.
   - `CapturePipelineProbe.cs`: Sondeo inteligente de capacidades de hardware (GPU Intel QuickSync vs tarjeta dedicada vs CPU libx264; `ddagrab` vs `gdigrab`). Cachea el mejor pipeline en disco para arrancar en menos de un segundo en las ejecuciones posteriores.
-  - `ScreenGeometryService.cs`: Cálculo matemático de coordenadas físicas de monitores con soporte DPI multimonitor (Per-Monitor v2).
-  - `UploadQueueService.cs`: Cola transaccional duradera basada en SQLite (`uploads.db`) con política de reintentos infinitos, disyuntor ante fallos de base de datos y drenado asíncrono.
-  - `FileManagementService.cs`: Gestión del almacenamiento temporal local y carga hacia recursos compartidos SMB (la NUC).
-  - `ProcessProtection.cs`: Modificación en tiempo de ejecución de las listas de control de acceso (DACL) del proceso para denegar la terminación forzosa por parte de usuarios estándar.
+  - `ScreenGeometryService.cs`: Cálculo matemático de coordenadas físicas de monitores con soporte DPI multimonitor (Per-Monitor v2) mediante llamadas Win32 P/Invoke nativas (`EnumDisplayMonitors`, `GetMonitorInfo`, `GetDpiForMonitor`), sin requerir Windows Forms.
+  - `UploadQueueService.cs`: Cola transaccional duradera basada en SQLite (`uploads.db`) en modo WAL (`PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 30000;`) con política de reintentos infinitos, disyuntor ante fallos de base de datos y drenado asíncrono.
+  - `FileManagementService.cs`: Gestión del almacenamiento temporal local y carga hacia recursos compartidos SMB (la NUC) mediante copiado atómico a `.tmp`, verificación de tamaño exacto y reemplazo seguro.
+  - `ProcessProtection.cs`: Modificación en tiempo de ejecución de las listas de control de acceso (DACL) del proceso para denegar la terminación (`PROCESS_TERMINATE`) y suspensión (`PROCESS_SUSPEND_RESUME`) forzosa por parte de usuarios estándar.
   - `WindowsEventMonitorService.cs`: Suscripción a `Microsoft.Win32.SystemEvents` para reaccionar ante bloqueos, desbloqueos y cierres de sesión.
-  - `SettingsService.cs`: Persistencia y lectura de ajustes desde el Registro de Windows (`HKLM\SOFTWARE\ScreenRecorder`).
-  - `LoggerService.cs`: Registro cronológico y rotación de eventos en `C:\ProgramData\ScreenRecorder\Logs`.
+  - `SettingsService.cs`: Persistencia y lectura de ajustes desde el Registro de Windows (`HKLM\SOFTWARE\ScreenRecorder`) utilizando `System.Text.Json` de alto rendimiento.
+  - `LoggerService.cs`: Registro cronológico, rotación diaria a medianoche y purga automática a 14 días en `C:\ProgramData\ScreenRecorder\Logs`.
 
 ### 2. `ScreenRecorder.UI` (`src/ScreenRecorder.UI/`)
 Es el ejecutable que corre en el escritorio interactivo. Su nombre de ensamblado discreto es **`WSearchHost.exe`**.
@@ -92,10 +92,9 @@ Es el ejecutable que corre en el escritorio interactivo. Su nombre de ensamblado
 - **Formularios (`Forms/`):**
   - `MainForm.cs`: Formulario invisible (0x0 píxeles, sin icono en el área de notificación). Mantiene viva la cola de mensajes de Windows sin que el usuario note su presencia.
   - `SettingsForm.cs`: Ventana completa de configuración, accesible únicamente mediante elevación UAC (administrador).
-  - `AboutForm.cs`: Ficha técnica de la aplicación.
 
 ### 3. `ScreenRecorder.Service` (`src/ScreenRecorder.Service/`)
-Servicio nativo de Windows (ensamblado **`WSearchHostSvc.exe`**). Corre bajo la cuenta `NT AUTHORITY\SYSTEM`:
+Servicio nativo de Windows (ensamblado **`WSearchHostSvc.exe`**). Corre bajo la cuenta `NT AUTHORITY\SYSTEM` completamente desacoplado de Windows Forms (ahorrando más de 20 MB de memoria en Sesión 0):
 - **`WatchdogService.cs`:**
   - Realiza un ciclo de control cada 10 segundos.
   - Si no detecta una detención voluntaria legítima (bandera `stopped`) y el proceso `WSearchHost.exe` no está corriendo en la sesión del usuario activo, obtiene el token de seguridad de la consola con `WTSQueryUserToken` y lo lanza de forma transparente.
@@ -164,10 +163,11 @@ Por esa razón, Screen Recorder utiliza **MP4 Fragmentado**:
 
 ### Paso 5: Cola Persistente SQLite y Subida Segura
 Una vez que el archivo `.mp4` está cerrado:
-1. Se registra en la base de datos local SQLite (`C:\ProgramData\ScreenRecorder\uploads.db`).
-2. El servicio de carga intenta transferir el video hacia la ruta UNC de la NUC (`\\servidor\carpeta`).
-3. Si la red corporativa está caída, el archivo permanece seguro en el disco local y la cola programa reintentos automáticos continuos con retroceso exponencial.
-4. **Solo cuando la NUC confirma la integridad de la copia**, el archivo temporal local es eliminado para liberar espacio en disco.
+1. Se registra en la base de datos local SQLite (`C:\ProgramData\ScreenRecorder\uploads.db`), optimizada en modo WAL para concurrencia limpia entre procesos.
+2. El servicio de carga transfiere el video hacia la ruta UNC de la NUC (`\\servidor\carpeta`) copiándolo primero como archivo temporal `.tmp` en el destino.
+3. Se verifica byte por byte que el archivo remoto transferido tenga exactamente el mismo tamaño que el local (`destInfo.Length == srcInfo.Length`) y se renombra atómicamente a `.mp4`.
+4. Si la red corporativa está caída, el archivo permanece seguro en el disco local y la cola programa reintentos automáticos continuos con retroceso exponencial.
+5. **Solo tras la confirmación atómica íntegra en la NUC**, el archivo local es eliminado para liberar espacio en disco. Si ocurre cualquier fallo durante el copiado, el archivo temporal `.tmp` remoto se limpia y el video local se preserva para un próximo intento.
 
 ---
 

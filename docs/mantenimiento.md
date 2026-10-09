@@ -22,7 +22,7 @@ Antes de profundizar en logs extensos, consulta esta tabla con las causas más h
 
 ## 2. Inspección y Análisis de Logs
 
-El sistema mantiene un registro exhaustivo de sus acciones en:
+El sistema mantiene un registro exhaustivo de sus acciones con rotación diaria automática a medianoche y purga automática de retención a los 14 días (`LoggerService.PurgeOldLogs()`):
 ```
 C:\ProgramData\ScreenRecorder\Logs\ScreenRecorder_YYYY-MM-DD.log
 ```
@@ -54,7 +54,7 @@ Get-Content (Get-Item "C:\ProgramData\ScreenRecorder\Logs\ScreenRecorder_*.log" 
 
 ## 3. Mantenimiento de la Base de Datos SQLite (`uploads.db`)
 
-La cola de envíos reside en `C:\ProgramData\ScreenRecorder\uploads.db`. En condiciones normales, el sistema se autorrepara automáticamente:
+La cola de envíos reside en `C:\ProgramData\ScreenRecorder\uploads.db`, operando en modo **WAL** (`uploads.db-wal` y `uploads.db-shm`) para garantizar concurrencia fluida entre el agente interactivo y el watchdog en Sesión 0:
 - **Disyuntor Integrado:** Si se presentan 3 fallos consecutivos en operaciones sobre SQLite, el sistema pasa automáticamente al *Modo Directo* (sube archivos examinando el disco y prescinde de la base).
 - **Autorreparación:** El servicio intentará recrear la base de datos eliminando archivos temporales `-wal` o `-shm` corruptos.
 
