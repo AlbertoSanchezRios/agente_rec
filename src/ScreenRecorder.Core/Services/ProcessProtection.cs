@@ -20,14 +20,17 @@ public static class ProcessProtection
     private const int SeKernelObject = 6;
     private const int DaclSecurityInformation = 0x00000004;
     private const uint ProcessTerminate = 0x00000001;
+    private const uint ProcessSuspendResume = 0x00000800;
+    private const uint DeniedUserRights = ProcessTerminate | ProcessSuspendResume; // 0x00000801
+    private const uint WRITE_DAC = 0x00040000;
     private const uint StandardRightsAll = 0x001F0000;
     private const uint SpecificRightsAll = 0x0000FFFF;
     private const uint FullControl = StandardRightsAll | SpecificRightsAll; // 0x001FFFFF
     private const int AclRevision = 2;
 
     /// <summary>
-    /// Aplica una DACL que deniega PROCESS_TERMINATE a "Usuarios" y concede control total a
-    /// SISTEMA y Administradores. Nunca lanza excepción: en caso de fallo solo loguea.
+    /// Aplica una DACL que deniega PROCESS_TERMINATE y PROCESS_SUSPEND_RESUME a "Usuarios"
+    /// y concede control total a SISTEMA y Administradores. Nunca lanza excepción: en caso de fallo solo loguea.
     /// Utiliza SIDs administrados con SecurityIdentifier para evitar fugas de memoria unmanaged.
     /// </summary>
     public static bool DenyTerminateForUsers(Process process, ILoggerService logger, string label)
@@ -70,7 +73,7 @@ public static class ProcessProtection
 
             // AddAccessDeniedAce/AddAccessAllowedAce devuelven BOOL: != 0 = ÉXITO, 0 = fallo.
             // Denegación PRIMERO (precede a las concesiones).
-            if (AddAccessDeniedAce(acl, AclRevision, ProcessTerminate, pUsers) == 0) return Fail(logger, label, "AddAccessDeniedAce");
+            if (AddAccessDeniedAce(acl, AclRevision, DeniedUserRights, pUsers) == 0) return Fail(logger, label, "AddAccessDeniedAce");
             if (AddAccessAllowedAce(acl, AclRevision, FullControl, pSystem) == 0) return Fail(logger, label, "AddAccessAllowedAce(SYSTEM)");
             if (AddAccessAllowedAce(acl, AclRevision, FullControl, pAdmins) == 0) return Fail(logger, label, "AddAccessAllowedAce(Administradores)");
 
@@ -80,12 +83,12 @@ public static class ProcessProtection
                 return Fail(logger, label, "SetSecurityInfo");
             }
 
-            logger.LogInfo($"Protección anti-finalización aplicada a {label}: un usuario estándar no podrá terminar este proceso.");
+            logger.LogInfo($"Protección anti-manipulación aplicada a {label}: un usuario estándar no podrá terminar ni suspender este proceso.");
             return true;
         }
         catch (Exception ex)
         {
-            logger.LogWarning($"No se pudo aplicar la protección anti-finalización a {label}: {ex.Message}");
+            logger.LogWarning($"No se pudo aplicar la protección anti-manipulación a {label}: {ex.Message}");
             return false;
         }
         finally
@@ -100,27 +103,63 @@ public static class ProcessProtection
     /// <summary>
     /// Restablece la DACL del proceso a NULL (acceso total). Lo usa la limpieza de FFmpeg
     /// huérfanos para poder matar procesos protegidos por la instancia anterior (el
-    /// propietario del proceso siempre puede reescribir la DACL). Nunca lanza excepción.
+    /// propietario del proceso siempre puede reescribir la DACL abriéndolo con WRITE_DAC). Nunca lanza excepción.
     /// </summary>
     public static bool ResetDacl(Process process, ILoggerService logger)
     {
+        IntPtr hProcess = OpenProcess(WRITE_DAC, false, process.Id);
+        bool shouldClose = true;
+        if (hProcess == IntPtr.Zero)
+        {
+            try
+            {
+                hProcess = process.Handle;
+                shouldClose = false;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning($"No se pudo abrir el proceso {process.Id} con WRITE_DAC ni obtener su Handle: {ex.Message}");
+                return false;
+            }
+        }
+
         try
         {
-            return SetSecurityInfo(new HandleRef(process, process.Handle), SeKernelObject,
-                DaclSecurityInformation, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero) == 0;
+            int result = SetSecurityInfo(new HandleRef(process, hProcess), SeKernelObject,
+                DaclSecurityInformation, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+            if (result != 0)
+            {
+                logger.LogWarning($"SetSecurityInfo falló al restablecer DACL del proceso {process.Id} (código {result}).");
+                return false;
+            }
+            return true;
         }
         catch (Exception ex)
         {
             logger.LogWarning($"No se pudo restablecer la ACL del proceso {process.Id}: {ex.Message}");
             return false;
         }
+        finally
+        {
+            if (shouldClose && hProcess != IntPtr.Zero)
+            {
+                CloseHandle(hProcess);
+            }
+        }
     }
 
     private static bool Fail(ILoggerService logger, string label, string step)
     {
-        logger.LogWarning($"Protección anti-finalización ({label}): falló en {step} (error {Marshal.GetLastWin32Error()}).");
+        logger.LogWarning($"Protección anti-manipulación ({label}): falló en {step} (error {Marshal.GetLastWin32Error()}).");
         return false;
     }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr OpenProcess(uint processAccess, bool bInheritHandle, int processId);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CloseHandle(IntPtr hObject);
 
     [DllImport("advapi32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
