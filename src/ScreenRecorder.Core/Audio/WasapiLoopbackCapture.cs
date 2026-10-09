@@ -47,6 +47,7 @@ public class WasapiLoopbackCapture : IDisposable
     public bool TryStart(ILoggerService logger)
     {
         if (IsRunning) return true;
+        bool started = false;
         IMMDeviceEnumerator? enumerator = null;
         IMMDevice? device = null;
         IntPtr pFormat = IntPtr.Zero;
@@ -100,17 +101,21 @@ public class WasapiLoopbackCapture : IDisposable
             _thread.Start();
 
             IsRunning = true;
+            started = true;
             logger.LogInfo($"WASAPI loopback activo: {SampleRate} Hz, {Channels} canales (PCM por stdin de FFmpeg).");
             return true;
         }
         catch (Exception ex)
         {
             LastError = ex.Message;
-            Cleanup();
             return false;
         }
         finally
         {
+            if (!started)
+            {
+                Cleanup();
+            }
             if (device != null) { try { Marshal.ReleaseComObject(device); } catch { } }
             if (enumerator != null) { try { Marshal.ReleaseComObject(enumerator); } catch { } }
             if (pFormat != IntPtr.Zero) Marshal.FreeCoTaskMem(pFormat);
@@ -203,6 +208,7 @@ public class WasapiLoopbackCapture : IDisposable
         finally
         {
             IsRunning = false;
+            Cleanup();
         }
     }
 
