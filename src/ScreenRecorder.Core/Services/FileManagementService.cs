@@ -54,69 +54,89 @@ public class FileManagementService : IFileManagementService
 
         for (int attempt = 1; attempt <= maxRetries; attempt++)
         {
-            try
-            {
-                _logger.LogInfo($"Intento {attempt}/{maxRetries} de upload: {fileName}");
-
-                // Verificar si la ruta de red es accesible
-                if (!Directory.Exists(effectiveNetworkPath))
+                string? tempDestinationPath = null;
+                try
                 {
-                    _logger.LogWarning($"Ruta de red no accesible: {effectiveNetworkPath}");
-                    await Task.Delay(5000 * attempt); // Esperar más tiempo en cada reintento
-                    continue;
-                }
+                    _logger.LogInfo($"Intento {attempt}/{maxRetries} de upload: {fileName}");
 
-                // Copiar archivo a la ruta de red
-                await Task.Run(() => File.Copy(filePath, destinationPath, overwrite: true));
-                
-                _logger.LogInfo($"Archivo subido exitosamente: {destinationPath}");
-
-                // Esperar un momento para asegurar que el archivo se escribió completamente
-                await Task.Delay(1000);
-
-                // Verificar que el archivo existe en destino
-                if (File.Exists(destinationPath))
-                {
-                    LastUploadDestination = destinationPath;
-                    // Borrar archivo local después de upload exitoso
-                    try
+                    // Verificar si la ruta de red es accesible
+                    if (!Directory.Exists(effectiveNetworkPath))
                     {
-                        File.Delete(filePath);
-                        _logger.LogInfo($"Archivo local eliminado: {filePath}");
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError($"Error al eliminar archivo local: {filePath}", ex);
+                        _logger.LogWarning($"Ruta de red no accesible: {effectiveNetworkPath}");
+                        await Task.Delay(5000 * attempt); // Esperar más tiempo en cada reintento
+                        continue;
                     }
 
-                    return true;
+                    tempDestinationPath = destinationPath + ".tmp";
+                    var srcInfo = new FileInfo(filePath);
+                    if (!srcInfo.Exists)
+                    {
+                        _logger.LogWarning($"Archivo local desapareció antes de copiar: {filePath}");
+                        return false;
+                    }
+
+                    // Copiar primero a archivo temporal en destino
+                    await Task.Run(() => File.Copy(filePath, tempDestinationPath, overwrite: true));
+
+                    // Verificar que el archivo temporal existe y coincide exactamente en tamaño con el origen
+                    var destInfo = new FileInfo(tempDestinationPath);
+                    if (!destInfo.Exists || destInfo.Length != srcInfo.Length)
+                    {
+                        try { if (File.Exists(tempDestinationPath)) File.Delete(tempDestinationPath); } catch { }
+                        throw new IOException($"El archivo copiado no coincide en tamaño con el original (origen: {srcInfo.Length} bytes, destino: {(destInfo.Exists ? destInfo.Length : -1)} bytes). Transferencia incompleta.");
+                    }
+
+                    // Renombrar atómicamente al nombre definitivo
+                    File.Move(tempDestinationPath, destinationPath, overwrite: true);
+
+                    // Verificar que el archivo existe en destino
+                    if (File.Exists(destinationPath))
+                    {
+                        LastUploadDestination = destinationPath;
+                        _logger.LogInfo($"Archivo subido exitosamente: {destinationPath} ({srcInfo.Length} bytes)");
+
+                        // Borrar archivo local SOLO después de confirmar la transferencia íntegra
+                        try
+                        {
+                            File.Delete(filePath);
+                            _logger.LogInfo($"Archivo local eliminado tras confirmación íntegra: {filePath}");
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError($"Error al eliminar archivo local: {filePath}", ex);
+                        }
+
+                        return true;
+                    }
+                    else
+                    {
+                        _logger.LogWarning($"Archivo no encontrado en destino después de renombrar: {destinationPath}");
+                    }
                 }
-                else
+                catch (UnauthorizedAccessException ex)
                 {
-                    _logger.LogWarning($"Archivo no encontrado en destino después de copiar: {destinationPath}");
+                    if (tempDestinationPath != null) { try { if (File.Exists(tempDestinationPath)) File.Delete(tempDestinationPath); } catch { } }
+                    _logger.LogError($"Sin permisos para acceder a la ruta de red: {effectiveNetworkPath}. Diagnóstico: {NetworkPathHelper.BuildInaccessibleDiagnostics(settings.NetworkPath)}", ex);
+                    break; // No reintentar si es problema de permisos
                 }
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                _logger.LogError($"Sin permisos para acceder a la ruta de red: {effectiveNetworkPath}. Diagnóstico: {NetworkPathHelper.BuildInaccessibleDiagnostics(settings.NetworkPath)}", ex);
-                break; // No reintentar si es problema de permisos
-            }
-            catch (IOException ex)
-            {
-                _logger.LogWarning($"Error de IO en intento {attempt}: {ex.Message}");
-                if (attempt < maxRetries)
+                catch (IOException ex)
                 {
-                    await Task.Delay(5000 * attempt); // Esperar más tiempo en cada reintento
+                    if (tempDestinationPath != null) { try { if (File.Exists(tempDestinationPath)) File.Delete(tempDestinationPath); } catch { } }
+                    _logger.LogWarning($"Error de IO en intento {attempt}: {ex.Message}");
+                    if (attempt < maxRetries)
+                    {
+                        await Task.Delay(5000 * attempt); // Esperar más tiempo en cada reintento
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError($"Error en intento {attempt} de upload", ex);
-                if (attempt < maxRetries)
+                catch (Exception ex)
                 {
-                    await Task.Delay(5000 * attempt);
+                    if (tempDestinationPath != null) { try { if (File.Exists(tempDestinationPath)) File.Delete(tempDestinationPath); } catch { } }
+                    _logger.LogError($"Error en intento {attempt} de upload", ex);
+                    if (attempt < maxRetries)
+                    {
+                        await Task.Delay(5000 * attempt);
+                    }
                 }
-            }
         }
 
         _logger.LogError($"No se pudo subir el archivo después de {maxRetries} intentos: {filePath}. La cola lo reintentará automáticamente (agente cada 2 min, servicio cada 10 min, y al rearrancar).");
