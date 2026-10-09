@@ -69,11 +69,11 @@ public class UploadQueueService
 
     private SqliteConnection Open()
     {
-        // Default Timeout: busy_timeout de 30 s (el agente y el servicio comparten la base;
-        // sin esto, un SQLITE_BUSY tumba el drenado completo). Cache=Shared mejora la
-        // convivencia entre procesos.
-        var conn = new SqliteConnection($"Data Source={_dbPath};Default Timeout=30;Cache=Shared");
+        var conn = new SqliteConnection($"Data Source={_dbPath};Default Timeout=30;");
         conn.Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 30000;";
+        cmd.ExecuteNonQuery();
         return conn;
     }
 
@@ -133,8 +133,12 @@ public class UploadQueueService
     {
         lock (_lock)
         {
-            using var conn = new SqliteConnection($"Data Source={_dbPath};Default Timeout=30;Cache=Shared");
+            using var conn = new SqliteConnection($"Data Source={_dbPath};Default Timeout=30;");
             conn.Open();
+            using var cmdPragma = conn.CreateCommand();
+            cmdPragma.CommandText = "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 30000;";
+            cmdPragma.ExecuteNonQuery();
+
             using var cmd = conn.CreateCommand();
             cmd.CommandText =
                 "CREATE TABLE IF NOT EXISTS uploads (" +

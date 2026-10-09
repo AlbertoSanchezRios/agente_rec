@@ -313,31 +313,42 @@ public class WatchdogService : ServiceBase
                 }
             }
 
-            // Subida DIRECTA (mecanismo de la versión que funcionaba), sin cola: el servicio
-            // sube los huérfanos de todos los usuarios cada 10 min.
-            var subidos = 0;
             foreach (var orphan in allOrphans)
             {
-                try
+                _uploadQueue.Enqueue(orphan);
+            }
+
+            var subidos = 0;
+            if (_uploadQueue.IsAvailable)
+            {
+                subidos = DrainQueue();
+            }
+            else
+            {
+                // Subida directa (mecanismo de respaldo cuando SQLite no está disponible)
+                foreach (var orphan in allOrphans)
                 {
-                    if (!File.Exists(orphan)) continue;
-                    var fi = new FileInfo(orphan);
-                    if (fi.Length < 1024) // inválido: no subir basura a la NUC
+                    try
                     {
-                        try { File.Delete(orphan); } catch { }
-                        continue;
+                        if (!File.Exists(orphan)) continue;
+                        var fi = new FileInfo(orphan);
+                        if (fi.Length < 1024)
+                        {
+                            try { File.Delete(orphan); } catch { }
+                            continue;
+                        }
+                        var ok = _fileManagementService.TryUploadFileAsync(orphan, maxRetries: 1).GetAwaiter().GetResult();
+                        if (ok) { subidos++; _lastUploadInfo = $"{DateTime.Now:HH:mm:ss} {Path.GetFileName(orphan)}"; }
                     }
-                    var ok = _fileManagementService.TryUploadFileAsync(orphan, maxRetries: 1).GetAwaiter().GetResult();
-                    if (ok) { subidos++; _lastUploadInfo = $"{DateTime.Now:HH:mm:ss} {Path.GetFileName(orphan)}"; }
-                }
-                catch (Exception ex)
-                {
-                    _lastQueueError = ex.Message;
+                    catch (Exception ex)
+                    {
+                        _lastQueueError = ex.Message;
+                    }
                 }
             }
 
-            // Latido del drenado: una línea por ciclo para diagnóstico remoto inmediato.
-            _logger.LogInfo($"[watchdog] Drenado: huérfanos={allOrphans.Count} subidos={subidos}");
+            // Latido del drenado: formato estándar para diagnóstico remoto
+            _logger.LogInfo($"[watchdog] Drenado: huérfanos={allOrphans.Count} colaDisponible={_uploadQueue.IsAvailable} pendientes={_uploadQueue.CountPending()} subidos={subidos}");
         }
         catch (Exception ex)
         {

@@ -277,8 +277,8 @@ public class RecordingService : IRecordingService
                 .Concat(Directory.GetFiles(_tempDirectory, "*.recording.mp4"))
                 .Where(f => File.GetLastWriteTime(f) < cutoff)
                 .ToList();
-            var subidos = 0;
 
+            var validOrphans = new List<string>();
             foreach (var orphan in orphans)
             {
                 var path = orphan;
@@ -304,13 +304,62 @@ public class RecordingService : IRecordingService
                     continue;
                 }
 
-                // Subida DIRECTA (mecanismo de la versión que funcionaba), sin cola.
-                try { if (await _fileManagementService.TryUploadFileAsync(path, maxRetries: 1)) subidos++; }
-                catch (Exception exUp) { _logger.LogWarning($"Drenado directo falló para {path}: {exUp.Message}"); }
+                validOrphans.Add(path);
+                _uploadQueue.Enqueue(path);
             }
 
-            // Latido del drenado: una línea por ciclo para diagnóstico remoto inmediato.
-            _logger.LogInfo($"Drenado: huérfanos={orphans.Count} subidos={subidos}");
+            var subidos = 0;
+            if (_uploadQueue.IsAvailable)
+            {
+                _uploadQueue.PruneMissingFiles();
+                var pending = _uploadQueue.GetPending(20);
+                foreach (var path in pending)
+                {
+                    if (!File.Exists(path))
+                    {
+                        _uploadQueue.MarkSent(path);
+                        continue;
+                    }
+                    if (!IsValidMp4(path))
+                    {
+                        _logger.LogError($"Pendiente inválido descartado: {path}. Cabecera: {HeaderHex(path)}");
+                        TryDelete(path);
+                        _uploadQueue.MarkSent(path);
+                        continue;
+                    }
+
+                    try
+                    {
+                        var ok = await _fileManagementService.TryUploadFileAsync(path, maxRetries: 1);
+                        if (ok)
+                        {
+                            _uploadQueue.MarkSent(path);
+                            subidos++;
+                        }
+                        else
+                        {
+                            _uploadQueue.MarkFailed(path);
+                        }
+                    }
+                    catch (Exception exUp)
+                    {
+                        _uploadQueue.MarkFailed(path);
+                        _logger.LogWarning($"Drenado de cola falló para {path}: {exUp.Message}");
+                    }
+                }
+            }
+            else
+            {
+                // Subida directa (mecanismo de respaldo cuando SQLite no está disponible)
+                foreach (var path in validOrphans)
+                {
+                    try { if (await _fileManagementService.TryUploadFileAsync(path, maxRetries: 1)) subidos++; }
+                    catch (Exception exUp) { _logger.LogWarning($"Drenado directo falló para {path}: {exUp.Message}"); }
+                }
+            }
+
+            // Latido del drenado: formato estándar para diagnóstico remoto y verify-autostart.ps1
+            _logger.LogInfo($"Drenado: huérfanos={orphans.Count} colaDisponible={_uploadQueue.IsAvailable} pendientes={_uploadQueue.CountPending()} subidos={subidos}");
         }
         catch (Exception ex)
         {
@@ -320,39 +369,6 @@ public class RecordingService : IRecordingService
         {
             _orphanUploadInProgress = false;
         }
-    }
-
-    /// <summary>Sube los pendientes de la cola SQLite. Reintentos sin tope: MarkFailed solo
-    /// incrementa intentos; la siguiente pasada lo vuelve a intentar.</summary>
-    private async Task<int> DrainUploadQueueAsync(TimeSpan? timebox = null)
-    {
-        var deadline = timebox.HasValue ? DateTime.UtcNow + timebox.Value : DateTime.MaxValue;
-        _uploadQueue.PruneMissingFiles();
-        var pending = _uploadQueue.GetPending(20);
-        if (pending.Count == 0) return 0;
-        var subidos = 0;
-
-        _logger.LogInfo($"Cola de envíos: {pending.Count} fragmento(s) pendiente(s).");
-        foreach (var path in pending)
-        {
-            if (DateTime.UtcNow > deadline) break;
-            if (!File.Exists(path)) { _uploadQueue.MarkSent(path); continue; }
-            if (!IsValidMp4(path))
-            {
-                _logger.LogError($"Pendiente inválido descartado: {path}. Cabecera: {HeaderHex(path)}");
-                TryDelete(path);
-                _uploadQueue.MarkSent(path);
-                continue;
-            }
-
-            // Un solo intento por ciclo: el reintento real lo da la cola en el siguiente
-            // drenado (cada 2 min). Asi un ciclo nunca se bloquea ~30 s por archivo cuando
-            // la NUC esta caida y no se atrasa el resto de la cola.
-            var ok = await _fileManagementService.TryUploadFileAsync(path, maxRetries: 1);
-            if (ok) { _uploadQueue.MarkSent(path); subidos++; }
-            else _uploadQueue.MarkFailed(path);
-        }
-        return subidos;
     }
 
     private async Task RecordInFragmentsAsync(RecordingSettings settings, CancellationToken cancellationToken)
@@ -697,22 +713,30 @@ public class RecordingService : IRecordingService
         _logger.LogInfo($"Fragmento finalizado ({reason}): {sourcePath}");
         RecordingCompleted?.Invoke(this, sourcePath);
 
+        // Encolar en la cola persistente SQLite (uploads.db)
+        _uploadQueue.Enqueue(sourcePath);
+
         if (_fastShutdown)
         {
             _logger.LogInfo("Apagado del sistema: fragmento cerrado localmente y pendiente de subida (se subirá al reanudar).");
             return;
         }
 
-        // Subida DIRECTA (mecanismo de la versión que funcionaba): en segundo plano durante
-        // la grabación; esperada al detener. La cola SQLite quedó descartada: añadía fallos
-        // silenciosos sin beneficio real. El drenado periódico reintenta lo que falle.
+        // Subida del fragmento actualizando estado en la cola duradera
         if (waitForUpload)
         {
-            await _fileManagementService.TryUploadFileAsync(sourcePath, maxRetries: 3);
+            var ok = await _fileManagementService.TryUploadFileAsync(sourcePath, maxRetries: 3);
+            if (ok) _uploadQueue.MarkSent(sourcePath);
+            else _uploadQueue.MarkFailed(sourcePath);
         }
         else
         {
-            _ = Task.Run(() => _fileManagementService.TryUploadFileAsync(sourcePath, maxRetries: 3));
+            _ = Task.Run(async () =>
+            {
+                var ok = await _fileManagementService.TryUploadFileAsync(sourcePath, maxRetries: 3);
+                if (ok) _uploadQueue.MarkSent(sourcePath);
+                else _uploadQueue.MarkFailed(sourcePath);
+            });
         }
     }
 
