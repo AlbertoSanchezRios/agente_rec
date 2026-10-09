@@ -311,7 +311,7 @@ public class RecordingService : IRecordingService
             if (_uploadQueue.IsAvailable)
             {
                 _uploadQueue.PruneMissingFiles();
-                var pending = _uploadQueue.GetPending(20);
+                var pending = _uploadQueue.ClaimPending(20);
                 foreach (var path in pending)
                 {
                     if (!File.Exists(path))
@@ -724,12 +724,15 @@ public class RecordingService : IRecordingService
         // Subida del fragmento actualizando estado en la cola duradera
         if (waitForUpload)
         {
+            _uploadQueue.TryClaim(sourcePath);
             var ok = await _fileManagementService.TryUploadFileAsync(sourcePath, maxRetries: 3);
             if (ok) _uploadQueue.MarkSent(sourcePath);
             else _uploadQueue.MarkFailed(sourcePath);
         }
         else
         {
+            // Reclamar lease inmediato para que el drenado periódico no duplique la subida
+            _uploadQueue.TryClaim(sourcePath);
             _ = Task.Run(async () =>
             {
                 var ok = await _fileManagementService.TryUploadFileAsync(sourcePath, maxRetries: 3);
@@ -742,6 +745,20 @@ public class RecordingService : IRecordingService
     private static void TryDelete(string path)
     {
         try { if (File.Exists(path)) File.Delete(path); } catch { /* no crítico */ }
+    }
+
+    private static void SafeKillFfmpegProcess(Process process, ILoggerService logger)
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                // Restablecer DACL antes de matar para que usuarios no administradores no sufran Access Denied
+                ProcessProtection.ResetDacl(process, logger);
+                process.Kill();
+            }
+        }
+        catch { /* ya terminado o sin acceso */ }
     }
 
     /// <summary>
@@ -764,7 +781,7 @@ public class RecordingService : IRecordingService
         {
             // El stdin transporta audio: no se puede enviar 'q'. Matar es seguro: el MP4
             // fragmentado (empty_moov) queda íntegro y reproducible.
-            try { process.Kill(); } catch { /* ya terminado */ }
+            SafeKillFfmpegProcess(process, _logger);
             await Task.Run(() => process.WaitForExit(5000));
             process.Dispose();
             return;
@@ -777,14 +794,14 @@ public class RecordingService : IRecordingService
             if (!process.HasExited)
             {
                 _logger.LogWarning($"FFmpeg no respondió a 'q' en {exitTimeoutMs / 1000} s; forzando cierre.");
-                process.Kill();
+                SafeKillFfmpegProcess(process, _logger);
                 await Task.Run(() => process.WaitForExit(3000));
             }
         }
         catch (Exception ex)
         {
             _logger.LogError("Error al detener FFmpeg", ex);
-            try { if (!process.HasExited) process.Kill(); } catch { /* ignorar */ }
+            SafeKillFfmpegProcess(process, _logger);
         }
         finally
         {

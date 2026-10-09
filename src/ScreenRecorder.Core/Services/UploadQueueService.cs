@@ -133,12 +133,7 @@ public class UploadQueueService
     {
         lock (_lock)
         {
-            using var conn = new SqliteConnection($"Data Source={_dbPath};Default Timeout=30;");
-            conn.Open();
-            using var cmdPragma = conn.CreateCommand();
-            cmdPragma.CommandText = "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 30000;";
-            cmdPragma.ExecuteNonQuery();
-
+            using var conn = Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText =
                 "CREATE TABLE IF NOT EXISTS uploads (" +
@@ -146,12 +141,21 @@ public class UploadQueueService
                 "estado TEXT NOT NULL," +
                 "intentos INTEGER NOT NULL DEFAULT 0," +
                 "creado TEXT NOT NULL," +
+                "actualizado TEXT," +
                 "enviado TEXT);";
             cmd.ExecuteNonQuery();
+
+            try
+            {
+                using var cmdCol = conn.CreateCommand();
+                cmdCol.CommandText = "ALTER TABLE uploads ADD COLUMN actualizado TEXT;";
+                cmdCol.ExecuteNonQuery();
+            }
+            catch { /* columna ya existe */ }
         }
     }
 
-    /// <summary>Añade un archivo a la cola (idempotente por ruta).</summary>
+    /// <summary>Añade un archivo a la cola (idempotente por ruta; respeta lease activo).</summary>
     public void Enqueue(string path)
     {
         if (!_available) return;
@@ -161,12 +165,98 @@ public class UploadQueueService
             using var conn = Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText =
-                "INSERT INTO uploads (path, estado, intentos, creado) VALUES ($p, 'pendiente', 0, $c) " +
-                "ON CONFLICT(path) DO UPDATE SET estado = 'pendiente';";
+                "INSERT INTO uploads (path, estado, intentos, creado, actualizado) VALUES ($p, 'pendiente', 0, $c, $c) " +
+                "ON CONFLICT(path) DO UPDATE SET " +
+                "estado = CASE WHEN estado = 'en_curso' THEN estado ELSE 'pendiente' END, " +
+                "actualizado = CASE WHEN estado = 'en_curso' THEN actualizado ELSE $c END;";
             cmd.Parameters.AddWithValue("$p", path);
-            cmd.Parameters.AddWithValue("$c", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+            cmd.Parameters.AddWithValue("$c", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"));
             cmd.ExecuteNonQuery();
         });
+    }
+
+    /// <summary>
+    /// Intenta reservar/bloquear un archivo específico para subida atómica inmediata,
+    /// evitando que otros procesos o ciclos concurrentes lo intenten a la vez.
+    /// </summary>
+    public bool TryClaim(string path, int leaseMinutes = 15)
+    {
+        if (!_available) return false;
+        var claimed = false;
+        lock (_lock)
+        Guarded(() =>
+        {
+            var now = DateTime.UtcNow;
+            var cutoff = now.AddMinutes(-leaseMinutes).ToString("yyyy-MM-dd HH:mm:ss");
+            var nowStr = now.ToString("yyyy-MM-dd HH:mm:ss");
+
+            using var conn = Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText =
+                "UPDATE uploads SET estado = 'en_curso', actualizado = $now " +
+                "WHERE path = $p AND (estado = 'pendiente' OR (estado = 'en_curso' AND (actualizado IS NULL OR actualizado < $cutoff)));";
+            cmd.Parameters.AddWithValue("$p", path);
+            cmd.Parameters.AddWithValue("$now", nowStr);
+            cmd.Parameters.AddWithValue("$cutoff", cutoff);
+            claimed = cmd.ExecuteNonQuery() > 0;
+        });
+        return claimed;
+    }
+
+    /// <summary>
+    /// Reclama atómicamente un lote de fragmentos pendientes asignándoles un lease temporal
+    /// ('en_curso'). Los fragmentos reclamados no serán devueltos a otros workers hasta que
+    /// expire el lease o se liberen.
+    /// </summary>
+    public List<string> ClaimPending(int limit, int leaseMinutes = 15)
+    {
+        var list = new List<string>();
+        if (!_available) return list;
+        lock (_lock)
+        Guarded(() =>
+        {
+            var now = DateTime.UtcNow;
+            var cutoff = now.AddMinutes(-leaseMinutes).ToString("yyyy-MM-dd HH:mm:ss");
+            var nowStr = now.ToString("yyyy-MM-dd HH:mm:ss");
+
+            using var conn = Open();
+            using var tx = conn.BeginTransaction();
+
+            using var selectCmd = conn.CreateCommand();
+            selectCmd.Transaction = tx;
+            selectCmd.CommandText =
+                "SELECT path FROM uploads " +
+                "WHERE estado = 'pendiente' OR (estado = 'en_curso' AND (actualizado IS NULL OR actualizado < $cutoff)) " +
+                "ORDER BY creado LIMIT $n;";
+            selectCmd.Parameters.AddWithValue("$cutoff", cutoff);
+            selectCmd.Parameters.AddWithValue("$n", limit);
+
+            using var reader = selectCmd.ExecuteReader();
+            while (reader.Read())
+            {
+                list.Add(reader.GetString(0));
+            }
+            reader.Close();
+
+            if (list.Count > 0)
+            {
+                using var updateCmd = conn.CreateCommand();
+                updateCmd.Transaction = tx;
+                updateCmd.CommandText =
+                    "UPDATE uploads SET estado = 'en_curso', actualizado = $now WHERE path = $p;";
+                var pParam = updateCmd.Parameters.Add("$p", Microsoft.Data.Sqlite.SqliteType.Text);
+                updateCmd.Parameters.AddWithValue("$now", nowStr);
+
+                foreach (var path in list)
+                {
+                    pParam.Value = path;
+                    updateCmd.ExecuteNonQuery();
+                }
+            }
+
+            tx.Commit();
+        });
+        return list;
     }
 
     public int CountPending()
@@ -179,7 +269,7 @@ public class UploadQueueService
             {
                 using var conn = Open();
                 using var cmd = conn.CreateCommand();
-                cmd.CommandText = "SELECT COUNT(*) FROM uploads WHERE estado = 'pendiente';";
+                cmd.CommandText = "SELECT COUNT(*) FROM uploads WHERE estado = 'pendiente' OR estado = 'en_curso';";
                 resultado = Convert.ToInt32(cmd.ExecuteScalar());
             });
             // -1 = no se pudo consultar; el disyuntor (Guarded) lleva la cuenta de fallos
@@ -188,25 +278,10 @@ public class UploadQueueService
         }
     }
 
-    public List<string> GetPending(int limit)
-    {
-        var list = new List<string>();
-        if (!_available) return list;
-        lock (_lock)
-        Guarded(() =>
-        {
-            using var conn = Open();
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT path FROM uploads WHERE estado = 'pendiente' ORDER BY creado LIMIT $n;";
-            cmd.Parameters.AddWithValue("$n", limit);
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read())
-            {
-                list.Add(reader.GetString(0));
-            }
-        });
-        return list;
-    }
+    /// <summary>
+    /// Obtiene y reclama pendientes de la cola de envíos.
+    /// </summary>
+    public List<string> GetPending(int limit) => ClaimPending(limit);
 
     public void MarkSent(string path)
     {
@@ -228,10 +303,12 @@ public class UploadQueueService
         lock (_lock)
         Guarded(() =>
         {
+            var nowStr = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
             using var conn = Open();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = "UPDATE uploads SET intentos = intentos + 1 WHERE path = $p;";
+            cmd.CommandText = "UPDATE uploads SET estado = 'pendiente', intentos = intentos + 1, actualizado = $now WHERE path = $p;";
             cmd.Parameters.AddWithValue("$p", path);
+            cmd.Parameters.AddWithValue("$now", nowStr);
             cmd.ExecuteNonQuery();
         });
     }

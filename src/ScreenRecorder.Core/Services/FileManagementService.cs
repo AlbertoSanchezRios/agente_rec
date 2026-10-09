@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,6 +14,7 @@ public class FileManagementService : IFileManagementService
 {
     private readonly ILoggerService _logger;
     private readonly ISettingsService _settingsService;
+    private readonly ConcurrentDictionary<string, byte> _activeUploads = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Ruta destino REAL (ya resuelta) del último upload exitoso. Para mostrar
     /// al usuario exactamente dónde llegó el archivo (puede diferir de la configurada si
@@ -38,6 +40,28 @@ public class FileManagementService : IFileManagementService
             return false;
         }
 
+        string fullSrcPath;
+        try { fullSrcPath = Path.GetFullPath(filePath); }
+        catch { fullSrcPath = filePath; }
+
+        if (!_activeUploads.TryAdd(fullSrcPath, 0))
+        {
+            _logger.LogInfo($"Archivo ya se encuentra en proceso de subida activo: {Path.GetFileName(filePath)}");
+            return false;
+        }
+
+        try
+        {
+            return await ExecuteUploadWithRetriesAsync(filePath, maxRetries);
+        }
+        finally
+        {
+            _activeUploads.TryRemove(fullSrcPath, out _);
+        }
+    }
+
+    private async Task<bool> ExecuteUploadWithRetriesAsync(string filePath, int maxRetries)
+    {
         var settings = _settingsService.LoadSettings();
         if (string.IsNullOrWhiteSpace(settings.NetworkPath))
         {
@@ -54,65 +78,74 @@ public class FileManagementService : IFileManagementService
 
         for (int attempt = 1; attempt <= maxRetries; attempt++)
         {
-                string? tempDestinationPath = null;
+            string? tempDestinationPath = null;
+            try
+            {
+                _logger.LogInfo($"Intento {attempt}/{maxRetries} de upload: {fileName}");
+
+                // Verificar si la ruta de red es accesible
+                if (!Directory.Exists(effectiveNetworkPath))
+                {
+                    _logger.LogWarning($"Ruta de red no accesible: {effectiveNetworkPath}");
+                    await Task.Delay(5000 * attempt); // Esperar más tiempo en cada reintento
+                    continue;
+                }
+
+                tempDestinationPath = $"{destinationPath}.{Guid.NewGuid():N}.tmp";
+                var srcInfo = new FileInfo(filePath);
+                if (!srcInfo.Exists)
+                {
+                    _logger.LogWarning($"Archivo local desapareció antes de copiar: {filePath}");
+                    return false;
+                }
+
+                // Copiar primero a archivo temporal único en destino
+                await Task.Run(() => File.Copy(filePath, tempDestinationPath, overwrite: true));
+
+                // Verificar que el archivo temporal existe y coincide exactamente en tamaño con el origen
+                var destInfo = new FileInfo(tempDestinationPath);
+                if (!destInfo.Exists || destInfo.Length != srcInfo.Length)
+                {
+                    try { if (File.Exists(tempDestinationPath)) File.Delete(tempDestinationPath); } catch { }
+                    throw new IOException($"El archivo copiado no coincide en tamaño con el original (origen: {srcInfo.Length} bytes, destino: {(destInfo.Exists ? destInfo.Length : -1)} bytes). Transferencia incompleta.");
+                }
+
+                // Renombrar atómicamente al nombre definitivo
                 try
                 {
-                    _logger.LogInfo($"Intento {attempt}/{maxRetries} de upload: {fileName}");
-
-                    // Verificar si la ruta de red es accesible
-                    if (!Directory.Exists(effectiveNetworkPath))
-                    {
-                        _logger.LogWarning($"Ruta de red no accesible: {effectiveNetworkPath}");
-                        await Task.Delay(5000 * attempt); // Esperar más tiempo en cada reintento
-                        continue;
-                    }
-
-                    tempDestinationPath = destinationPath + ".tmp";
-                    var srcInfo = new FileInfo(filePath);
-                    if (!srcInfo.Exists)
-                    {
-                        _logger.LogWarning($"Archivo local desapareció antes de copiar: {filePath}");
-                        return false;
-                    }
-
-                    // Copiar primero a archivo temporal en destino
-                    await Task.Run(() => File.Copy(filePath, tempDestinationPath, overwrite: true));
-
-                    // Verificar que el archivo temporal existe y coincide exactamente en tamaño con el origen
-                    var destInfo = new FileInfo(tempDestinationPath);
-                    if (!destInfo.Exists || destInfo.Length != srcInfo.Length)
-                    {
-                        try { if (File.Exists(tempDestinationPath)) File.Delete(tempDestinationPath); } catch { }
-                        throw new IOException($"El archivo copiado no coincide en tamaño con el original (origen: {srcInfo.Length} bytes, destino: {(destInfo.Exists ? destInfo.Length : -1)} bytes). Transferencia incompleta.");
-                    }
-
-                    // Renombrar atómicamente al nombre definitivo
                     File.Move(tempDestinationPath, destinationPath, overwrite: true);
-
-                    // Verificar que el archivo existe en destino
-                    if (File.Exists(destinationPath))
-                    {
-                        LastUploadDestination = destinationPath;
-                        _logger.LogInfo($"Archivo subido exitosamente: {destinationPath} ({srcInfo.Length} bytes)");
-
-                        // Borrar archivo local SOLO después de confirmar la transferencia íntegra
-                        try
-                        {
-                            File.Delete(filePath);
-                            _logger.LogInfo($"Archivo local eliminado tras confirmación íntegra: {filePath}");
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError($"Error al eliminar archivo local: {filePath}", ex);
-                        }
-
-                        return true;
-                    }
-                    else
-                    {
-                        _logger.LogWarning($"Archivo no encontrado en destino después de renombrar: {destinationPath}");
-                    }
                 }
+                catch (IOException) when (File.Exists(destinationPath))
+                {
+                    // Respaldo para servidores SMB/Samba con bloqueos temporales en sobreescritura
+                    try { File.Delete(destinationPath); } catch { }
+                    File.Move(tempDestinationPath, destinationPath, overwrite: true);
+                }
+
+                // Verificar que el archivo existe en destino
+                if (File.Exists(destinationPath))
+                {
+                    LastUploadDestination = destinationPath;
+                    _logger.LogInfo($"Archivo subido exitosamente: {destinationPath} ({srcInfo.Length} bytes)");
+
+                    // Borrar archivo local SOLO después de confirmar la transferencia íntegra
+                    try
+                    {
+                        File.Delete(filePath);
+                        _logger.LogInfo($"Archivo local eliminado tras confirmación íntegra: {filePath}");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError($"Error al eliminar archivo local: {filePath}", ex);
+                    }
+
+                    return true;
+                }
+                else
+                {
+                    _logger.LogWarning($"Archivo no encontrado en destino después de renombrar: {destinationPath}");
+                }
+            }
                 catch (UnauthorizedAccessException ex)
                 {
                     if (tempDestinationPath != null) { try { if (File.Exists(tempDestinationPath)) File.Delete(tempDestinationPath); } catch { } }
