@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -46,19 +47,21 @@ public class WasapiLoopbackCapture : IDisposable
     public bool TryStart(ILoggerService logger)
     {
         if (IsRunning) return true;
+        IMMDeviceEnumerator? enumerator = null;
+        IMMDevice? device = null;
         IntPtr pFormat = IntPtr.Zero;
         try
         {
             var enumeratorType = Type.GetTypeFromCLSID(new Guid("BCDE0395-E52F-467C-8E3D-C4579291692E"));
             if (enumeratorType == null) { LastError = "no se pudo crear MMDeviceEnumerator"; return false; }
-            var enumerator = (IMMDeviceEnumerator)Activator.CreateInstance(enumeratorType)!;
+            enumerator = (IMMDeviceEnumerator)Activator.CreateInstance(enumeratorType)!;
 
-            int hr = enumerator.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eConsole, out var device);
+            int hr = enumerator.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eConsole, out device);
             if (hr != 0 || device == null) { LastError = $"sin dispositivo de reproduccion por defecto (hr={hr:X})"; return false; }
 
             var iidAudioClient = new Guid("1CB9AD4C-DBFA-4c32-B178-C2F568A703B2");
             hr = device.Activate(ref iidAudioClient, CLSCTX_ALL, IntPtr.Zero, out var audioClientObj);
-            if (hr != 0) { LastError = $"Activate IAudioClient fallo (hr={hr:X})"; return false; }
+            if (hr != 0 || audioClientObj == null) { LastError = $"Activate IAudioClient fallo (hr={hr:X})"; return false; }
             _audioClient = (IAudioClient)audioClientObj;
 
             hr = _audioClient.GetMixFormat(out pFormat);
@@ -108,6 +111,8 @@ public class WasapiLoopbackCapture : IDisposable
         }
         finally
         {
+            if (device != null) { try { Marshal.ReleaseComObject(device); } catch { } }
+            if (enumerator != null) { try { Marshal.ReleaseComObject(enumerator); } catch { } }
             if (pFormat != IntPtr.Zero) Marshal.FreeCoTaskMem(pFormat);
         }
     }
@@ -147,14 +152,24 @@ public class WasapiLoopbackCapture : IDisposable
                 hr = _captureClient.GetBuffer(out IntPtr pData, out uint numFrames, out uint flags, out _, out _);
                 if (hr != 0) break;
 
+                int byteCount = (int)(numFrames * bytesPerFrame);
+                byte[] rented = ArrayPool<byte>.Shared.Rent(byteCount);
+
                 try
                 {
-                    byte[] pcm = new byte[numFrames * bytesPerFrame];
-                    if ((flags & 1 /*AUDCLNT_BUFFERFLAGS_SILENT*/) == 0)
+                    if ((flags & 1 /*AUDCLNT_BUFFERFLAGS_SILENT*/) != 0)
                     {
-                        if (isFloat) ConvertFloatToS16(pData, numFrames * (uint)Channels, pcm);
-                        else Marshal.Copy(pData, pcm, 0, pcm.Length);
+                        Array.Clear(rented, 0, byteCount);
                     }
+                    else if (isFloat)
+                    {
+                        ConvertFloatToS16(pData, numFrames * (uint)Channels, rented);
+                    }
+                    else
+                    {
+                        Marshal.Copy(pData, rented, 0, byteCount);
+                    }
+
                     // Si el endpoint entrega paquetes MÁS LENTO que el reloj (algunos drivers
                     // limitan la entrega de silencio), rellenar el hueco con silencio para que
                     // el audio nunca se quede atrás: si el audio se atrasa, FFmpeg espera al
@@ -170,11 +185,12 @@ public class WasapiLoopbackCapture : IDisposable
                             EscribirSilencio((int)huecoMs);
                         }
                     }
-                    Deliver(pcm, logger);
+                    Deliver(rented, byteCount, logger);
                 }
                 finally
                 {
                     _captureClient.ReleaseBuffer(numFrames);
+                    ArrayPool<byte>.Shared.Return(rented);
                 }
             }
 
@@ -190,15 +206,15 @@ public class WasapiLoopbackCapture : IDisposable
         }
     }
 
-    private void Deliver(byte[] pcm, ILoggerService logger)
+    private void Deliver(byte[] buffer, int count, ILoggerService logger)
     {
         var client = Client;
         if (client == null) return; // sin FFmpeg a la escucha: se descarta (no acumular)
 
         try
         {
-            client.Write(pcm, 0, pcm.Length);
-            BytesDelivered += pcm.Length;
+            client.Write(buffer, 0, count);
+            BytesDelivered += count;
             _lastWriteTicks = DateTime.UtcNow.Ticks;
         }
         catch (Exception)
@@ -241,16 +257,19 @@ public class WasapiLoopbackCapture : IDisposable
         catch { /* cliente cerrado: el siguiente fragmento reasigna Client */ }
     }
 
-    private static void ConvertFloatToS16(IntPtr pFloat, uint sampleCount, byte[] output)
+    private static unsafe void ConvertFloatToS16(IntPtr pFloat, uint sampleCount, byte[] output)
     {
-        for (uint i = 0; i < sampleCount; i++)
+        float* src = (float*)pFloat.ToPointer();
+        fixed (byte* dstBytes = output)
         {
-            float f = Marshal.PtrToStructure<float>(IntPtr.Add(pFloat, (int)(i * 4)));
-            if (f > 1f) f = 1f;
-            if (f < -1f) f = -1f;
-            short s = (short)(f * 32767f);
-            output[i * 2] = (byte)(s & 0xFF);
-            output[i * 2 + 1] = (byte)((s >> 8) & 0xFF);
+            short* dst = (short*)dstBytes;
+            for (uint i = 0; i < sampleCount; i++)
+            {
+                float f = src[i];
+                if (f > 1f) f = 1f;
+                else if (f < -1f) f = -1f;
+                dst[i] = (short)(f * 32767f);
+            }
         }
     }
 
@@ -265,11 +284,17 @@ public class WasapiLoopbackCapture : IDisposable
     {
         IsRunning = false;
         Client = null;
-        try { _audioClient?.Stop(); } catch { }
-        try { (_audioClient as IDisposable)?.Dispose(); } catch { }
-        try { (_captureClient as IDisposable)?.Dispose(); } catch { }
-        _audioClient = null;
-        _captureClient = null;
+        if (_audioClient != null)
+        {
+            try { _audioClient.Stop(); } catch { }
+            try { Marshal.ReleaseComObject(_audioClient); } catch { }
+            _audioClient = null;
+        }
+        if (_captureClient != null)
+        {
+            try { Marshal.ReleaseComObject(_captureClient); } catch { }
+            _captureClient = null;
+        }
     }
 
     public void Dispose() => Stop();
