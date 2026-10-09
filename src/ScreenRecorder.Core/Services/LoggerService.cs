@@ -10,8 +10,8 @@ namespace ScreenRecorder.Core.Services;
 public class LoggerService : ILoggerService
 {
     private readonly string _logDirectory;
-    private readonly string _logFile;
     private readonly object _lockObject = new object();
+    private DateTime _lastPurgeDate = DateTime.MinValue;
 
     // Mutex global: el agente (usuario) y el servicio watchdog (SYSTEM) escriben el mismo log.
     // Sin esto, AppendAllText (FileShare.Read) pierde entradas cuando ambos procesos escriben
@@ -27,9 +27,32 @@ public class LoggerService : ILoggerService
         
         _logDirectory = Path.Combine(appDataPath, "Logs");
         Directory.CreateDirectory(_logDirectory);
-        
+    }
+
+    private string GetCurrentLogFile()
+    {
         var date = DateTime.Now.ToString("yyyy-MM-dd");
-        _logFile = Path.Combine(_logDirectory, $"ScreenRecorder_{date}.log");
+        return Path.Combine(_logDirectory, $"ScreenRecorder_{date}.log");
+    }
+
+    private void PurgeOldLogs()
+    {
+        if ((DateTime.Now - _lastPurgeDate).TotalHours < 12) return;
+        _lastPurgeDate = DateTime.Now;
+        try
+        {
+            var cutoff = DateTime.Now.AddDays(-14);
+            var dirInfo = new DirectoryInfo(_logDirectory);
+            if (!dirInfo.Exists) return;
+            foreach (var file in dirInfo.GetFiles("ScreenRecorder_*.log"))
+            {
+                if (file.LastWriteTime < cutoff)
+                {
+                    try { file.Delete(); } catch { }
+                }
+            }
+        }
+        catch { }
     }
 
     public void LogInfo(string message)
@@ -64,11 +87,25 @@ public class LoggerService : ILoggerService
             var gotMutex = false;
             try
             {
-                gotMutex = LogMutex.WaitOne(TimeSpan.FromSeconds(5));
+                try
+                {
+                    gotMutex = LogMutex.WaitOne(TimeSpan.FromSeconds(5));
+                }
+                catch (AbandonedMutexException)
+                {
+                    // Si el proceso anterior murió con el mutex adquirido, Windows concede
+                    // la posesión lanzando AbandonedMutexException. Marcar gotMutex = true
+                    // asegura que se use y que el bloque finally siempre lo libere.
+                    gotMutex = true;
+                }
+
+                PurgeOldLogs();
+
                 var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
                 var logEntry = $"[{timestamp}] [{level}] {message}";
+                var logFile = GetCurrentLogFile();
 
-                File.AppendAllText(_logFile, logEntry + Environment.NewLine);
+                File.AppendAllText(logFile, logEntry + Environment.NewLine);
             }
             catch
             {
