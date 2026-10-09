@@ -447,16 +447,7 @@ public class WatchdogService : ServiceBase
         }
     }
 
-    private static bool IsStopFlagSet()
-    {
-        try
-        {
-            return File.Exists(Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-                "ScreenRecorder", "stopped"));
-        }
-        catch { return false; }
-    }
+    private static bool IsStopFlagSet() => ScreenRecorder.Core.Constants.AppConstants.IsStopFlagSet();
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern uint WaitForSingleObject(IntPtr hHandle, uint dwMilliseconds);

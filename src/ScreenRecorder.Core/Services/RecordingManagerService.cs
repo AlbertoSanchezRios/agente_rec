@@ -183,10 +183,7 @@ public class RecordingManagerService : IRecordingManagerService
         try
         {
             // No reanudar si hay detención voluntaria legítima ('echate').
-            var flag = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-                "ScreenRecorder", "stopped");
-            if (File.Exists(flag))
+            if (Constants.AppConstants.IsStopFlagSet())
             {
                 _logger.LogInfo("Reanudado del sistema, pero hay detención voluntaria ('stopped'): no se inicia la grabación.");
                 return;

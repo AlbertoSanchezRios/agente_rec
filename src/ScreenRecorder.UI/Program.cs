@@ -439,10 +439,5 @@ static class Program
         }
     }
 
-    private static bool IsRunningAsAdministrator()
-    {
-        var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
-        var principal = new System.Security.Principal.WindowsPrincipal(identity);
-        return principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
-    }
+    private static bool IsRunningAsAdministrator() => ScreenRecorder.Core.Services.NetworkPathHelper.IsProcessElevated();
 }

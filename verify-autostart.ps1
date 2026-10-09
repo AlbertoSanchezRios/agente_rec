@@ -1,4 +1,4 @@
-﻿# Diagnostico del autoarranque de ScreenRecorder. NO modifica nada: solo reporta.
+# Diagnostico del autoarranque de ScreenRecorder. NO modifica nada: solo reporta.
 param([string]$TaskName = 'ScreenRecorder')
 
 $stopFlag = Join-Path $env:ProgramData 'ScreenRecorder\stopped'
@@ -237,7 +237,7 @@ try {
     $versionAgente = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($agent.Path).FileVersion
 } catch { }
 if ($diagLog) {
-    $ultimoDrenado = $diagLog | Select-String -Pattern 'Drenado: huérfanos=(\d+) colaDisponible=(\w+) pendientes=(-?\d+) subidos=(\d+)' | Select-Object -Last 1
+    $ultimoDrenado = $diagLog | Select-String -Pattern 'Drenado: huérfanos=(\d+)(?: colaDisponible=(\w+) pendientes=(-?\d+))? subidos=(\d+)' | Select-Object -Last 1
     if ($ultimoDrenado) {
         try {
             $ts = [datetime]::ParseExact(($ultimoDrenado.Line -replace '^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*$', '$1'), 'yyyy-MM-dd HH:mm:ss', $null)
@@ -257,7 +257,7 @@ if (-not $ultimoDrenado) {
 } elseif ($minDesdeDrenado -ne $null -and $minDesdeDrenado -gt 6) {
     Write-Output "VEREDICTO: El drenado lleva $minDesdeDrenado min sin dar un ciclo (deberia ser cada 2 min)."
     Write-Output "  Version del agente: $versionAgente. SOLUCION: reinicie la PC."
-} elseif ($ultimoDrenado -and $ultimoDrenado.Matches[0].Groups[2].Value -eq 'False') {
+} elseif ($ultimoDrenado -and $ultimoDrenado.Matches[0].Groups[2].Success -and $ultimoDrenado.Matches[0].Groups[2].Value -eq 'False') {
     Write-Output "VEREDICTO: La cola de envios (SQLite) esta CAIDA en esta PC."
     Write-Output "  Busque arriba 'Cola de envíos (SQLite)' en el log para la excepcion exacta."
 } elseif ($ultimoDrenado -and $hayCerradosEnTemp -and $ultimoDrenado.Matches[0].Groups[1].Value -eq '0') {
@@ -268,7 +268,7 @@ if (-not $ultimoDrenado) {
     Write-Output "VEREDICTO: Los envíos se intentan y FALLAN. Últimos errores (arriba):"
     foreach ($e in $lastUpErr) { Write-Output ("  " + ($e.Line -replace '^.+\] \[(WARNING|ERROR)\] ', '')) }
     Write-Output "  Corrija esa causa (ruta/permisos del share; preferible UNC \\servidor\carpeta)."
-} elseif ($ultimoDrenado -and $ultimoDrenado.Matches[0].Groups[4].Value -gt 0) {
+} elseif ($ultimoDrenado -and [int]$ultimoDrenado.Matches[0].Groups[4].Value -gt 0) {
     Write-Output "VEREDICTO: Los envíos FUNCIONAN (último ciclo subió $($ultimoDrenado.Matches[0].Groups[4].Value))."
     Write-Output "  Los archivos deberian estar llegando a la ruta NUC configurada."
 } else {

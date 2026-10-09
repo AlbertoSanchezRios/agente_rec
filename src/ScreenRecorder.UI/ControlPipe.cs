@@ -6,6 +6,7 @@ using System.Security.Principal;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using ScreenRecorder.Core.Constants;
 using ScreenRecorder.Core.Services;
 
 namespace ScreenRecorder.UI;
@@ -16,7 +17,7 @@ namespace ScreenRecorder.UI;
 /// </summary>
 public static class ControlPipe
 {
-    public const string PipeName = "ScreenRecorderControl";
+    public const string PipeName = AppConstants.PipeName;
     public const string MutexName = @"Global\WSearchHostSingleInstance";
 
     public const string CommandShowConfig = "perro";
@@ -28,15 +29,9 @@ public static class ControlPipe
     /// (/background, p. ej. el minutero de la tarea programada) no inician la grabación.
     /// Se borra con 'quieto', al Guardar en Ajustes o al ejecutar la app manualmente.
     /// </summary>
-    private static readonly string StopFlagPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-        "ScreenRecorder", "stopped");
+    private static readonly string StopFlagPath = AppConstants.StopFlagPath;
 
-    public static bool IsStopFlagSet()
-    {
-        try { return File.Exists(StopFlagPath); }
-        catch { return false; }
-    }
+    public static bool IsStopFlagSet() => AppConstants.IsStopFlagSet();
 
     public static void SetStopFlag()
     {

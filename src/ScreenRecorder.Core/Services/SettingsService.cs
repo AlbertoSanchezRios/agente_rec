@@ -1,7 +1,7 @@
 using System;
 using System.IO;
+using System.Text.Json;
 using Microsoft.Win32;
-using Newtonsoft.Json;
 using ScreenRecorder.Core.Models;
 
 namespace ScreenRecorder.Core.Services;
@@ -14,6 +14,7 @@ public class SettingsService : ISettingsService
     private const string RegistryKey = @"SOFTWARE\ScreenRecorder";
     private const string SettingsValueName = "Settings";
     private readonly ILoggerService _logger;
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     public SettingsService(ILoggerService logger)
     {
@@ -30,7 +31,7 @@ public class SettingsService : ISettingsService
                 var settingsJson = key.GetValue(SettingsValueName) as string;
                 if (!string.IsNullOrEmpty(settingsJson))
                 {
-                    var settings = JsonConvert.DeserializeObject<RecordingSettings>(settingsJson);
+                    var settings = JsonSerializer.Deserialize<RecordingSettings>(settingsJson);
                     if (settings != null)
                     {
                         _logger.LogInfo("Configuración cargada desde Registry");
@@ -56,7 +57,7 @@ public class SettingsService : ISettingsService
             using var key = Registry.LocalMachine.CreateSubKey(RegistryKey, true);
             if (key != null)
             {
-                var settingsJson = JsonConvert.SerializeObject(settings, Formatting.Indented);
+                var settingsJson = JsonSerializer.Serialize(settings, JsonOptions);
                 key.SetValue(SettingsValueName, settingsJson);
                 _logger.LogInfo("Configuración guardada en Registry");
             }

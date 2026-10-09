@@ -1437,10 +1437,5 @@ public partial class SettingsForm : Form
         }
     }
 
-    private bool IsRunningAsAdministrator()
-    {
-        var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
-        var principal = new System.Security.Principal.WindowsPrincipal(identity);
-        return principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
-    }
+    private bool IsRunningAsAdministrator() => ScreenRecorder.Core.Services.NetworkPathHelper.IsProcessElevated();
 }
