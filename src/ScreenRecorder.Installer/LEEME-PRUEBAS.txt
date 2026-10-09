@@ -1,0 +1,85 @@
+=====================================================================
+  SCREEN RECORDER - GUIA DE PRUEBAS (Fase 1)
+  Instalador MSI - version 1.2.0
+=====================================================================
+
+QUE INSTALA
+-----------
+Este MSI instala el grabador en:
+    C:\Program Files\ScreenRecorder\
+con .NET 10 incluido (self-contained) y FFmpeg renombrado (WmvCoreHost.exe),
+por lo que NO necesita instalar ningun runtime adicional.
+
+Arranque automatico: el MSI deja una clave Run para que arranque al iniciar
+sesion. Ademas, en el Menu Inicio (carpeta "Screen Recorder") hay un acceso
+"Instalar autoarranque (tarea programada)" que registra la tarea programada
+supervisada (se reinicia solo si se cuelga). Ejecutarlo una vez con UAC.
+
+
+INSTALACION
+-----------
+  msiexec /i ScreenRecorder-1.2.0.msi /qn /norestart
+
+Desinstalacion:
+  msiexec /x ScreenRecorder-1.2.0.msi /qn /norestart
+(o desde "Aplicaciones" en Configuracion de Windows)
+
+
+CHECKLIST DE PRUEBAS
+--------------------
+1) Tras instalar, cerrar sesion y volver a entrar (o ejecutar
+   "Instalar autoarranque" y abrir la sesion). El grabador debe arrancar
+   solo y sin ventana.
+
+2) Abrir el Administrador de tareas: debe aparecer WSearchHost.exe y
+   WmvCoreHost.exe (FFmpeg). CPU esperada: MENOR AL 5% con Chrome, Edge
+   y Excel abiertos (antes consumia ~10%).
+
+3) Dejar que grabe 1-2 minutos y comprobar el video resultante:
+   - Cubre TODO el monitor (NO solo 1/4). Bug corregido: antes se veia
+     una esquina porque el recorte se tomaba como "1080 de ancho".
+   - Resolucion: la app escala a la altura elegida en Ajustes (p. ej. 1080p).
+
+4) Log de configuracion: abrir
+   C:\ProgramData\ScreenRecorder\Logs\ultimo log
+   La linea "Config efectiva" debe mostrar enc=h264_qsv y la geometria real
+   del monitor (tambien indica el backend sondeado y el monitor elegido).
+
+5) Multimonitor: en Ajustes elegir Primario / Secundario / Ambos y comprobar
+   que graba el monitor correcto.
+
+6) Cursor: con Chrome/Edge/Excel abiertos, el cursor NO debe parpadear
+   (captura por GPU, sin BitBlt).
+
+7) Tiempo de arranque: desde el inicio de sesion hasta que graba deben
+   pasar <= 5 segundos (antes eran ~8 s por esperas artificiales).
+
+
+AVISO IMPORTANTE SOBRE LA RUTA DE SALIDA
+----------------------------------------
+La aplicacion se AUTO-ELEVA (pide permisos de administrador). Un proceso
+elevado NO ve las unidades de red mapeadas del usuario (S:, etc.).
+Para guardar en red, configure una RUTA UNC, por ejemplo:
+    \\SERVIDOR\recurso\carpeta
+(no una letra de unidad).
+
+Si no configura ninguna ruta de salida, los videos se guardan en una
+carpeta temporal local y NO se suben a ningun sitio.
+
+
+COMANDOS (desde C:\Program Files\ScreenRecorder\ o el Menu Inicio)
+-----------------------------------------------------------------
+  WSearchHost.exe            -> abre Ajustes (configurar ruta, monitor, FPS)
+  WSearchHost.exe /background-> arranca oculto grabando (usa el autoarranque)
+  (la parada voluntaria 'echate' es solo de TI: el pipe es solo-admin y ya no hay BAT)
+  Verificar Autoarranque.bat -> diagnostico del arranque automatico
+  Instalar Autoarranque.bat  -> registra la tarea programada supervisada
+
+
+LOGS Y SOPORTE
+--------------
+  Logs:    C:\ProgramData\ScreenRecorder\Logs\
+  Config:  HKLM\SOFTWARE\ScreenRecorder
+  Cache de pipeline sondeado: C:\ProgramData\ScreenRecorder\pipeline.txt
+
+=====================================================================

@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Instalador MSI de Screen Recorder (Fase 1: captura GPU + multimonitor + QSV).
+
+  IMPORTANTE (entorno de build): en esta máquina WiX (4 y 5) descarta silenciosamente
+  el contenido de <Fragment>, por lo que TODO va dentro de <Package>. El volumen de
+  archivos (~190 DLLs) se incluye vía GeneratedComponents.wxi (generado por build-msi.ps1).
+
+  Compila con build-msi.ps1 (publish self-contained + wix CLI), o manualmente:
+    wix build Package.wxs -d ProductVersion=1.2.0 -d PublishDir=... -d InstallerDir=... ^
+        -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext -out ScreenRecorder.msi
+
+  Decisiones de diseño:
+  - per-machine, C:\Program Files\ScreenRecorder\.
+  - Self-contained: no depende de .NET Desktop Runtime instalado en la PC.
+  - Autoarranque: clave HKLM\...\Run (arranca solo al iniciar sesion) + atajo en el Menú
+    Inicio para registrar la tarea programada supervisada (install-autostart.ps1, que borra
+    la clave Run al registrarla). El MSI NO puede registrar la tarea programada por usuario:
+    las custom actions de un MSI per-machine corren como SYSTEM y quedaría mal registrada.
+  - Al actualizar: escribe la bandera 'stopped' y mata WSearchHost.exe antes de copiar
+    archivos; la borra después. Así no hay ficheros en uso y la tarea programada lo relanza
+    con el build nuevo.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <Package Name="Screen Recorder"
+           Language="1033"
+           Version="$(var.ProductVersion)"
+           Manufacturer="Empresa"
+           UpgradeCode="6F75FBAD-30D4-4523-9905-A60C1922114D"
+           Scope="perMachine">
+
+    <MajorUpgrade DowngradeErrorMessage="Ya hay instalada una versión más reciente de [ProductName]."
+                  AllowSameVersionUpgrades="yes" />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="AppIcon" SourceFile="$(var.PublishDir)WSearchHost.exe" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <UIRef Id="WixUI_ErrorProgressText" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.InstallerDir)License.rtf" />
+
+    <!-- Estructura de directorios -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="ScreenRecorder" />
+    </StandardDirectory>
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="AppDataScreenRecorder" Name="ScreenRecorder">
+        <Directory Id="LogsFolder" Name="Logs" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="MenuFolder" Name="Screen Recorder" />
+    </StandardDirectory>
+
+    <!-- Componentes principales -->
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+      <Component Id="AppExe" Guid="*">
+        <File Id="WSearchHostExe" Source="$(var.PublishDir)WSearchHost.exe" KeyPath="yes" />
+      </Component>
+      <!-- FFmpeg (WmvCoreHost.exe, 212 MB): componente propio para trato de compresión -->
+      <Component Id="Ffmpeg" Guid="*">
+        <File Id="WmvCoreHostExe" Source="$(var.PublishDir)WmvCoreHost.exe" KeyPath="yes" />
+      </Component>
+      <!-- Scripts de operación (NO se distribuye 'Detener ScreenRecorder.bat': la parada
+           voluntaria queda reservada a TI; el pipe solo acepta clientes admin/SYSTEM) -->
+      <Component Id="Scripts" Guid="A9C4E5F2-6D3B-4E7A-9B1C-5D8E2F4A6C0B">
+        <File Id="InstallAutoBat" Source="$(var.PublishDir)Instalar Autoarranque.bat" KeyPath="yes" />
+        <File Source="$(var.PublishDir)Verificar Autoarranque.bat" />
+        <File Source="$(var.PublishDir)install-autostart.ps1" />
+        <File Source="$(var.PublishDir)verify-autostart.ps1" />
+        <File Source="$(var.PublishDir)LEEME-PRUEBAS.txt" />
+      </Component>
+      <!-- Servicio watchdog (LocalSystem): rearranca el agente si lo finalizan, sube
+           huérfanos y escribe heartbeat. Se instifica con el MSI (también lo crea
+           install-autostart.ps1 si falta). -->
+      <Component Id="WatchdogService" Guid="F601928B-6BF1-428E-BCF6-C6D8071E832D">
+        <File Id="WSearchHostSvcExe" Source="$(var.PublishDir)WSearchHostSvc.exe" KeyPath="yes" />
+        <ServiceInstall Id="SvcInstall" Type="ownProcess" Name="WSearchHostSvc"
+                        DisplayName="ScreenRecorder Watchdog" Account="LocalSystem"
+                        Start="auto" ErrorControl="normal"
+                        Description="Supervisa el agente de grabación (lo rearranca si lo finalizan desde el Administrador de tareas), sube fragmentos pendientes a la NUC y escribe heartbeat. No detener." />
+        <ServiceControl Id="SvcControl" Name="WSearchHostSvc" Start="install" Stop="both" Remove="uninstall" />
+      </Component>
+      <!-- Autoarranque: clave Run (borrada al desinstalar; install-autostart.ps1 la
+           elimina al registrar la tarea programada supervisada) -->
+      <Component Id="AutostartRun" Guid="*">
+        <RegistryValue Root="HKLM"
+                       Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+                       Name="ScreenRecorder"
+                       Type="string"
+                       Value="&quot;[INSTALLFOLDER]WSearchHost.exe&quot; /background"
+                       KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- DLLs de runtime (.NET self-contained): harvest de build-msi.ps1 -->
+    <ComponentGroup Id="GeneratedComponents" Directory="INSTALLFOLDER">
+      <?include GeneratedComponents.wxi?>
+    </ComponentGroup>
+
+    <!-- ProgramData\ScreenRecorder\Logs con permiso de escritura para Usuarios
+         (instancias no elevadas de la app también escriben log) -->
+    <ComponentGroup Id="LogsComponents" Directory="LogsFolder">
+      <Component Id="LogsDir" Guid="C8B3D4E2-5F4A-4B6C-8D9E-3F2A1B0C9D8E">
+        <CreateFolder>
+          <util:PermissionEx User="Users" GenericAll="yes" />
+        </CreateFolder>
+      </Component>
+    </ComponentGroup>
+
+    <!-- Menú Inicio -->
+    <ComponentGroup Id="MenuComponents" Directory="MenuFolder">
+      <Component Id="StartMenu" Guid="B7A2C9D1-4E3F-4A5B-9C8D-2E1F0A9B8C7D">
+        <Shortcut Id="MenuConfigurar" Name="Configurar Screen Recorder"
+                  Target="[INSTALLFOLDER]WSearchHost.exe" WorkingDirectory="INSTALLFOLDER" Icon="AppIcon" />
+        <Shortcut Id="MenuVerificar" Name="Verificar autoarranque"
+                  Target="[INSTALLFOLDER]Verificar Autoarranque.bat" WorkingDirectory="INSTALLFOLDER" />
+        <Shortcut Id="MenuInstalarAuto" Name="Instalar autoarranque (tarea programada)"
+                  Target="[INSTALLFOLDER]Instalar Autoarranque.bat" WorkingDirectory="INSTALLFOLDER" />
+        <RemoveFolder Id="MenuFolderRemove" Directory="MenuFolder" On="uninstall" />
+        <RegistryValue Root="HKLM" Key="SOFTWARE\ScreenRecorder" Name="MenuInstalled" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="ProductFeature" Title="Screen Recorder" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+      <ComponentGroupRef Id="GeneratedComponents" />
+      <ComponentGroupRef Id="LogsComponents" />
+      <ComponentGroupRef Id="MenuComponents" />
+    </Feature>
+
+    <!-- Detener la app antes de copiar y dejarla lista para rearrancar tras copiar.
+         El agente lleva protección anti-finalización (ACL que deniega PROCESS_TERMINATE a
+         Usuarios, administradores incluidos salvo reescritura de la DACL), así que el
+         antiguo 'taskkill' ya no funcionaría. La vía correcta es la parada ORDENADA por el
+         pipe 'echate' (el instalador es administrador y el pipe admite admin/SYSTEM):
+         el agente cierra FFmpeg, sube el último fragmento y sale.
+         1) CA_StopBeforeCopy (impersonada): bandera 'stopped' + 'echate' + esperar a que
+            el proceso desaparezca (máx. 120 s, típicamente <30 s).
+         2) CA_KillLeftovers (SIN impersonar = SYSTEM): red de seguridad por si quedara algo.
+         Ruta fija: ProgramData siempre es C:\ProgramData en equipos destino estándar. -->
+    <!-- CustomActionData con la ruta del agente (las propiedades del MSI no están disponibles
+         en CAs diferidas; se pasan con SetProperty usando el mismo Id que la CA). -->
+    <SetProperty Id="CA_StopBeforeCopy" Sequence="execute" Before="CA_StopBeforeCopy"
+                 Value="[INSTALLFOLDER]WSearchHost.exe" />
+    <CustomAction Id="CA_StopBeforeCopy"
+                  Directory="SystemFolder"
+                  ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;$d='C:\ProgramData\ScreenRecorder'; New-Item -Force -ItemType Directory -Path $d | Out-Null; Set-Content -Path (Join-Path $d 'stopped') -Value (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') -Force; $exe='[CA_StopBeforeCopy]'; if (Test-Path $exe) { &amp; $exe echate 2&gt;$null | Out-Null; $deadline=(Get-Date).AddSeconds(120); while ((Get-Process WSearchHost -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 } }; exit 0&quot;"
+                  Execute="deferred" Impersonate="yes" Return="ignore" />
+    <CustomAction Id="CA_KillLeftovers"
+                  Directory="SystemFolder"
+                  ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;taskkill /IM WSearchHost.exe /F 2&gt;$null; taskkill /IM WmvCoreHost.exe /F 2&gt;$null; exit 0&quot;"
+                  Execute="deferred" Impersonate="no" Return="ignore" />
+    <CustomAction Id="CA_ClearStopAfterCopy"
+                  Directory="SystemFolder"
+                  ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;Remove-Item -Path 'C:\ProgramData\ScreenRecorder\stopped' -Force -ErrorAction SilentlyContinue; exit 0&quot;"
+                  Execute="deferred" Impersonate="yes" Return="ignore" />
+
+    <!-- Auto-registro del autoarranque durante la instalación: ejecuta install-autostart.ps1
+         (ya copiado) como el usuario que instala. Registra la tarea programada supervisada
+         y asegura el servicio watchdog, sin pasos manuales. Impersonada: la tarea queda
+         asociada a ese usuario (si TI instala con otra cuenta, ejecutar el BAT una vez con
+         el usuario que graba). No corre en desinstalaciones (NOT REMOVE). -->
+    <!-- CustomActionData: en CAs diferidas EXE solo es visible la propiedad con el MISMO
+         nombre que la acción ([CA_RegisterAutostart] = la carpeta de instalación). El propio
+         script auto-detecta su carpeta, así que no hace falta pasar -InstallDir. Toda la
+         salida queda en C:\ProgramData\ScreenRecorder\install-autostart.log (transcript). -->
+    <SetProperty Id="CA_RegisterAutostart" Sequence="execute" Before="CA_RegisterAutostart"
+                 Value="[INSTALLFOLDER]" />
+    <CustomAction Id="CA_RegisterAutostart"
+                  Directory="SystemFolder"
+                  ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;[CA_RegisterAutostart]install-autostart.ps1&quot;"
+                  Execute="deferred" Impersonate="yes" Return="ignore" />
+
+    <!-- Abrir la configuración al terminar la instalación INTERACTIVA.
+         WixShellExec (wixutil) lanza el proceso como el usuario que instala (un
+         Start-Process desde una CA impersonada heredaría el token SYSTEM de msiexec y la
+         ventana quedaría invisible en la sesión 0). UILevel > 2 excluye el modo /qn.
+         'perro' muestra Ajustes y, al Guardar, inicia la grabación. -->
+    <!-- WixShellExec NO admite argumentos (recibe UN solo path). Se lanza WSearchHost.exe
+         SIN args: el propio exe auto-eleva con UAC y abre la configuración; si el agente
+         ya corre, le pide el pipe con reintento. Ya NO se usa postinstall.vbs: Windows 11
+         (24H2+) deshabilita VBScript por defecto y el vbs no ejecutaba (la config no se
+         abría al instalar). El autoregistro del servicio lo hace CA_RegisterAutostart. -->
+    <CustomAction Id="CA_SetLaunchConfig" Property="WixShellExecTarget"
+                  Value="[INSTALLFOLDER]WSearchHost.exe" />
+    <CustomAction Id="CA_LaunchConfig" BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)" DllEntry="WixShellExec"
+                  Execute="immediate" Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="CA_StopBeforeCopy" Before="InstallFiles" />
+      <Custom Action="CA_KillLeftovers" Before="InstallFiles" />
+      <Custom Action="CA_ClearStopAfterCopy" After="InstallFiles" />
+      <Custom Action="CA_RegisterAutostart" After="CA_ClearStopAfterCopy" Condition="NOT REMOVE" />
+      <Custom Action="CA_SetLaunchConfig" After="InstallFinalize" Condition="NOT REMOVE AND UILevel &gt; 2" />
+      <Custom Action="CA_LaunchConfig" After="CA_SetLaunchConfig" Condition="NOT REMOVE AND UILevel &gt; 2" />
+    </InstallExecuteSequence>
+  </Package>
+</Wix>

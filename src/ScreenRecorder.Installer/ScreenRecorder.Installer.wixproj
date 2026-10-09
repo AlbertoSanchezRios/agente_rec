@@ -1,0 +1,20 @@
+<!-- WiX 4.0.6: la 5.0.2 genera bases MSI vacías en este entorno (símbolos en el IR pero
+     tablas Feature/Component/File sin escribir). El esquema wxs es el mismo (v4). -->
+<Project Sdk="WixToolset.Sdk/4.0.6">
+
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <OutputName>ScreenRecorder-$(ProductVersion)</OutputName>
+    <ProductVersion Condition="'$(ProductVersion)' == ''">1.2.0</ProductVersion>
+    <PublishDir>$(MSBuildThisFileDirectory)..\..\publish\msi\</PublishDir>
+    <InstallerDir>$(MSBuildThisFileDirectory)</InstallerDir>
+    <!-- Las wxs solo ven MSBuild props mediante $(var.X) definidas aquí -->
+    <DefineConstants>ProductVersion=$(ProductVersion);PublishDir=$(PublishDir);InstallerDir=$(InstallerDir)</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.UI.wixext" Version="4.0.6" />
+    <PackageReference Include="WixToolset.Util.wixext" Version="4.0.6" />
+  </ItemGroup>
+
+</Project>
