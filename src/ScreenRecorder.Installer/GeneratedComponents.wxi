@@ -1,4 +1,7 @@
 <Include xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Component Id="C_Gen_Accessibility_dll" Guid="*">
+    <File Id="Gen_Accessibility_dll" Source="$(var.PublishDir)Accessibility.dll" KeyPath="yes" />
+  </Component>
   <Component Id="C_Gen_clretwrc_dll" Guid="*">
     <File Id="Gen_clretwrc_dll" Source="$(var.PublishDir)clretwrc.dll" KeyPath="yes" />
   </Component>
@@ -38,8 +41,14 @@
   <Component Id="C_Gen_Microsoft_VisualBasic_dll" Guid="*">
     <File Id="Gen_Microsoft_VisualBasic_dll" Source="$(var.PublishDir)Microsoft.VisualBasic.dll" KeyPath="yes" />
   </Component>
+  <Component Id="C_Gen_Microsoft_VisualBasic_Forms_dll" Guid="*">
+    <File Id="Gen_Microsoft_VisualBasic_Forms_dll" Source="$(var.PublishDir)Microsoft.VisualBasic.Forms.dll" KeyPath="yes" />
+  </Component>
   <Component Id="C_Gen_Microsoft_Win32_Primitives_dll" Guid="*">
     <File Id="Gen_Microsoft_Win32_Primitives_dll" Source="$(var.PublishDir)Microsoft.Win32.Primitives.dll" KeyPath="yes" />
+  </Component>
+  <Component Id="C_Gen_Microsoft_Win32_Registry_AccessControl_dll" Guid="*">
+    <File Id="Gen_Microsoft_Win32_Registry_AccessControl_dll" Source="$(var.PublishDir)Microsoft.Win32.Registry.AccessControl.dll" KeyPath="yes" />
   </Component>
   <Component Id="C_Gen_Microsoft_Win32_Registry_dll" Guid="*">
     <File Id="Gen_Microsoft_Win32_Registry_dll" Source="$(var.PublishDir)Microsoft.Win32.Registry.dll" KeyPath="yes" />
@@ -89,6 +98,9 @@
   <Component Id="C_Gen_System_Buffers_dll" Guid="*">
     <File Id="Gen_System_Buffers_dll" Source="$(var.PublishDir)System.Buffers.dll" KeyPath="yes" />
   </Component>
+  <Component Id="C_Gen_System_CodeDom_dll" Guid="*">
+    <File Id="Gen_System_CodeDom_dll" Source="$(var.PublishDir)System.CodeDom.dll" KeyPath="yes" />
+  </Component>
   <Component Id="C_Gen_System_Collections_Concurrent_dll" Guid="*">
     <File Id="Gen_System_Collections_Concurrent_dll" Source="$(var.PublishDir)System.Collections.Concurrent.dll" KeyPath="yes" />
   </Component>
@@ -122,6 +134,9 @@
   <Component Id="C_Gen_System_ComponentModel_TypeConverter_dll" Guid="*">
     <File Id="Gen_System_ComponentModel_TypeConverter_dll" Source="$(var.PublishDir)System.ComponentModel.TypeConverter.dll" KeyPath="yes" />
   </Component>
+  <Component Id="C_Gen_System_Configuration_ConfigurationManager_dll" Guid="*">
+    <File Id="Gen_System_Configuration_ConfigurationManager_dll" Source="$(var.PublishDir)System.Configuration.ConfigurationManager.dll" KeyPath="yes" />
+  </Component>
   <Component Id="C_Gen_System_Configuration_dll" Guid="*">
     <File Id="Gen_System_Configuration_dll" Source="$(var.PublishDir)System.Configuration.dll" KeyPath="yes" />
   </Component>
@@ -139,6 +154,9 @@
   </Component>
   <Component Id="C_Gen_System_Data_dll" Guid="*">
     <File Id="Gen_System_Data_dll" Source="$(var.PublishDir)System.Data.dll" KeyPath="yes" />
+  </Component>
+  <Component Id="C_Gen_System_Design_dll" Guid="*">
+    <File Id="Gen_System_Design_dll" Source="$(var.PublishDir)System.Design.dll" KeyPath="yes" />
   </Component>
   <Component Id="C_Gen_System_Diagnostics_Contracts_dll" Guid="*">
     <File Id="Gen_System_Diagnostics_Contracts_dll" Source="$(var.PublishDir)System.Diagnostics.Contracts.dll" KeyPath="yes" />
@@ -158,6 +176,9 @@
   <Component Id="C_Gen_System_Diagnostics_FileVersionInfo_dll" Guid="*">
     <File Id="Gen_System_Diagnostics_FileVersionInfo_dll" Source="$(var.PublishDir)System.Diagnostics.FileVersionInfo.dll" KeyPath="yes" />
   </Component>
+  <Component Id="C_Gen_System_Diagnostics_PerformanceCounter_dll" Guid="*">
+    <File Id="Gen_System_Diagnostics_PerformanceCounter_dll" Source="$(var.PublishDir)System.Diagnostics.PerformanceCounter.dll" KeyPath="yes" />
+  </Component>
   <Component Id="C_Gen_System_Diagnostics_Process_dll" Guid="*">
     <File Id="Gen_System_Diagnostics_Process_dll" Source="$(var.PublishDir)System.Diagnostics.Process.dll" KeyPath="yes" />
   </Component>
@@ -176,8 +197,17 @@
   <Component Id="C_Gen_System_Diagnostics_Tracing_dll" Guid="*">
     <File Id="Gen_System_Diagnostics_Tracing_dll" Source="$(var.PublishDir)System.Diagnostics.Tracing.dll" KeyPath="yes" />
   </Component>
+  <Component Id="C_Gen_System_DirectoryServices_dll" Guid="*">
+    <File Id="Gen_System_DirectoryServices_dll" Source="$(var.PublishDir)System.DirectoryServices.dll" KeyPath="yes" />
+  </Component>
   <Component Id="C_Gen_System_dll" Guid="*">
     <File Id="Gen_System_dll" Source="$(var.PublishDir)System.dll" KeyPath="yes" />
+  </Component>
+  <Component Id="C_Gen_System_Drawing_Common_dll" Guid="*">
+    <File Id="Gen_System_Drawing_Common_dll" Source="$(var.PublishDir)System.Drawing.Common.dll" KeyPath="yes" />
+  </Component>
+  <Component Id="C_Gen_System_Drawing_Design_dll" Guid="*">
+    <File Id="Gen_System_Drawing_Design_dll" Source="$(var.PublishDir)System.Drawing.Design.dll" KeyPath="yes" />
   </Component>
   <Component Id="C_Gen_System_Drawing_dll" Guid="*">
     <File Id="Gen_System_Drawing_dll" Source="$(var.PublishDir)System.Drawing.dll" KeyPath="yes" />
@@ -190,6 +220,9 @@
   </Component>
   <Component Id="C_Gen_System_Formats_Asn1_dll" Guid="*">
     <File Id="Gen_System_Formats_Asn1_dll" Source="$(var.PublishDir)System.Formats.Asn1.dll" KeyPath="yes" />
+  </Component>
+  <Component Id="C_Gen_System_Formats_Nrbf_dll" Guid="*">
+    <File Id="Gen_System_Formats_Nrbf_dll" Source="$(var.PublishDir)System.Formats.Nrbf.dll" KeyPath="yes" />
   </Component>
   <Component Id="C_Gen_System_Formats_Tar_dll" Guid="*">
     <File Id="Gen_System_Formats_Tar_dll" Source="$(var.PublishDir)System.Formats.Tar.dll" KeyPath="yes" />
@@ -241,6 +274,9 @@
   </Component>
   <Component Id="C_Gen_System_IO_MemoryMappedFiles_dll" Guid="*">
     <File Id="Gen_System_IO_MemoryMappedFiles_dll" Source="$(var.PublishDir)System.IO.MemoryMappedFiles.dll" KeyPath="yes" />
+  </Component>
+  <Component Id="C_Gen_System_IO_Packaging_dll" Guid="*">
+    <File Id="Gen_System_IO_Packaging_dll" Source="$(var.PublishDir)System.IO.Packaging.dll" KeyPath="yes" />
   </Component>
   <Component Id="C_Gen_System_IO_Pipelines_dll" Guid="*">
     <File Id="Gen_System_IO_Pipelines_dll" Source="$(var.PublishDir)System.IO.Pipelines.dll" KeyPath="yes" />
@@ -350,6 +386,12 @@
   <Component Id="C_Gen_System_Private_Uri_dll" Guid="*">
     <File Id="Gen_System_Private_Uri_dll" Source="$(var.PublishDir)System.Private.Uri.dll" KeyPath="yes" />
   </Component>
+  <Component Id="C_Gen_System_Private_Windows_Core_dll" Guid="*">
+    <File Id="Gen_System_Private_Windows_Core_dll" Source="$(var.PublishDir)System.Private.Windows.Core.dll" KeyPath="yes" />
+  </Component>
+  <Component Id="C_Gen_System_Private_Windows_GdiPlus_dll" Guid="*">
+    <File Id="Gen_System_Private_Windows_GdiPlus_dll" Source="$(var.PublishDir)System.Private.Windows.GdiPlus.dll" KeyPath="yes" />
+  </Component>
   <Component Id="C_Gen_System_Private_Xml_dll" Guid="*">
     <File Id="Gen_System_Private_Xml_dll" Source="$(var.PublishDir)System.Private.Xml.dll" KeyPath="yes" />
   </Component>
@@ -382,6 +424,9 @@
   </Component>
   <Component Id="C_Gen_System_Reflection_TypeExtensions_dll" Guid="*">
     <File Id="Gen_System_Reflection_TypeExtensions_dll" Source="$(var.PublishDir)System.Reflection.TypeExtensions.dll" KeyPath="yes" />
+  </Component>
+  <Component Id="C_Gen_System_Resources_Extensions_dll" Guid="*">
+    <File Id="Gen_System_Resources_Extensions_dll" Source="$(var.PublishDir)System.Resources.Extensions.dll" KeyPath="yes" />
   </Component>
   <Component Id="C_Gen_System_Resources_Reader_dll" Guid="*">
     <File Id="Gen_System_Resources_Reader_dll" Source="$(var.PublishDir)System.Resources.Reader.dll" KeyPath="yes" />
@@ -464,14 +509,26 @@
   <Component Id="C_Gen_System_Security_Cryptography_OpenSsl_dll" Guid="*">
     <File Id="Gen_System_Security_Cryptography_OpenSsl_dll" Source="$(var.PublishDir)System.Security.Cryptography.OpenSsl.dll" KeyPath="yes" />
   </Component>
+  <Component Id="C_Gen_System_Security_Cryptography_Pkcs_dll" Guid="*">
+    <File Id="Gen_System_Security_Cryptography_Pkcs_dll" Source="$(var.PublishDir)System.Security.Cryptography.Pkcs.dll" KeyPath="yes" />
+  </Component>
   <Component Id="C_Gen_System_Security_Cryptography_Primitives_dll" Guid="*">
     <File Id="Gen_System_Security_Cryptography_Primitives_dll" Source="$(var.PublishDir)System.Security.Cryptography.Primitives.dll" KeyPath="yes" />
+  </Component>
+  <Component Id="C_Gen_System_Security_Cryptography_ProtectedData_dll" Guid="*">
+    <File Id="Gen_System_Security_Cryptography_ProtectedData_dll" Source="$(var.PublishDir)System.Security.Cryptography.ProtectedData.dll" KeyPath="yes" />
   </Component>
   <Component Id="C_Gen_System_Security_Cryptography_X509Certificates_dll" Guid="*">
     <File Id="Gen_System_Security_Cryptography_X509Certificates_dll" Source="$(var.PublishDir)System.Security.Cryptography.X509Certificates.dll" KeyPath="yes" />
   </Component>
+  <Component Id="C_Gen_System_Security_Cryptography_Xml_dll" Guid="*">
+    <File Id="Gen_System_Security_Cryptography_Xml_dll" Source="$(var.PublishDir)System.Security.Cryptography.Xml.dll" KeyPath="yes" />
+  </Component>
   <Component Id="C_Gen_System_Security_dll" Guid="*">
     <File Id="Gen_System_Security_dll" Source="$(var.PublishDir)System.Security.dll" KeyPath="yes" />
+  </Component>
+  <Component Id="C_Gen_System_Security_Permissions_dll" Guid="*">
+    <File Id="Gen_System_Security_Permissions_dll" Source="$(var.PublishDir)System.Security.Permissions.dll" KeyPath="yes" />
   </Component>
   <Component Id="C_Gen_System_Security_Principal_dll" Guid="*">
     <File Id="Gen_System_Security_Principal_dll" Source="$(var.PublishDir)System.Security.Principal.dll" KeyPath="yes" />
@@ -559,6 +616,21 @@
   </Component>
   <Component Id="C_Gen_System_Windows_dll" Guid="*">
     <File Id="Gen_System_Windows_dll" Source="$(var.PublishDir)System.Windows.dll" KeyPath="yes" />
+  </Component>
+  <Component Id="C_Gen_System_Windows_Extensions_dll" Guid="*">
+    <File Id="Gen_System_Windows_Extensions_dll" Source="$(var.PublishDir)System.Windows.Extensions.dll" KeyPath="yes" />
+  </Component>
+  <Component Id="C_Gen_System_Windows_Forms_Design_dll" Guid="*">
+    <File Id="Gen_System_Windows_Forms_Design_dll" Source="$(var.PublishDir)System.Windows.Forms.Design.dll" KeyPath="yes" />
+  </Component>
+  <Component Id="C_Gen_System_Windows_Forms_Design_Editors_dll" Guid="*">
+    <File Id="Gen_System_Windows_Forms_Design_Editors_dll" Source="$(var.PublishDir)System.Windows.Forms.Design.Editors.dll" KeyPath="yes" />
+  </Component>
+  <Component Id="C_Gen_System_Windows_Forms_dll" Guid="*">
+    <File Id="Gen_System_Windows_Forms_dll" Source="$(var.PublishDir)System.Windows.Forms.dll" KeyPath="yes" />
+  </Component>
+  <Component Id="C_Gen_System_Windows_Forms_Primitives_dll" Guid="*">
+    <File Id="Gen_System_Windows_Forms_Primitives_dll" Source="$(var.PublishDir)System.Windows.Forms.Primitives.dll" KeyPath="yes" />
   </Component>
   <Component Id="C_Gen_System_Xml_dll" Guid="*">
     <File Id="Gen_System_Xml_dll" Source="$(var.PublishDir)System.Xml.dll" KeyPath="yes" />
