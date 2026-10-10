@@ -71,6 +71,12 @@ project.assets.json
 **/WmvCoreHost.exe
 **/WCodecHost.exe
 tools/ffmpeg-build/
+# DLL de runtime de la FFmpeg a medida (enlazado dinámico): se generan con build-ffmpeg.ps1
+**/libvpl*.dll
+**/libx264*.dll
+**/libwinpthread*.dll
+**/libgcc_s*.dll
+**/libstdc++*.dll
 
 # -----------------------------------------------------------------------
 # Grabaciones locales y bases de datos SQLite

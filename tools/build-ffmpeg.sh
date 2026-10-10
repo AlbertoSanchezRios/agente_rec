@@ -17,8 +17,8 @@
 #        pacman -S --needed --noconfirm \
 #          mingw-w64-x86_64-toolchain mingw-w64-x86_64-nasm mingw-w64-x86_64-yasm \
 #          mingw-w64-x86_64-pkgconf mingw-w64-x86_64-libx264 \
-#          mingw-w64-x86_64-onevpl mingw-w64-x86_64-nv-codec-headers \
-#          mingw-w64-x86_64-amf-headers
+#          mingw-w64-x86_64-libvpl mingw-w64-x86_64-ffnvcodec-headers \
+#          mingw-w64-x86_64-amf-headers make
 #   3) bash tools/build-ffmpeg.sh
 #
 # Variables: SRC (fuente FFmpeg), OUT (carpeta de salida), FFMPEG_VERSION (tag).
@@ -29,7 +29,7 @@ set -euo pipefail
 
 SRC="${SRC:-$HOME/ffmpeg-src}"
 OUT="${OUT:-/d/dev/agente_rec/tools/ffmpeg-build}"
-FFMPEG_VERSION="${FFMPEG_VERSION:-n7.1}"
+FFMPEG_VERSION="${FFMPEG_VERSION:-n9.0.2}"
 
 if [ ! -d "$SRC" ]; then
   echo "Clonando FFmpeg $FFMPEG_VERSION en $SRC..."
@@ -47,20 +47,18 @@ echo "Configurando FFmpeg mínimo..."
   --enable-gpl --enable-libx264 \
   --enable-d3d11va \
   --enable-libvpl \
-  --enable-nvenc --enable-cuda-nvcc \
+  --enable-ffnvcodec --enable-nvenc \
   --enable-amf \
   --enable-avdevice \
   --enable-protocol=file,pipe \
   --enable-indev=lavfi,gdigrab,dshow,wasapi \
-  --enable-demuxer=rawvideo,matroska,mov,lavfi \
-  --enable-muxer=matroska,mov,null \
-  --enable-decoder=h264,aac,rawvideo \
-  --enable-encoder=h264_qsv,h264_nvenc,h264_amf,libx264,aac \
+  --enable-demuxer=rawvideo,pcm_s16le,matroska,mov \
+  --enable-muxer=matroska,mov,mp4,null \
+  --enable-decoder=h264,aac,rawvideo,wrapped_avframe,pcm_s16le,pcm_u8 \
+  --enable-encoder=h264_qsv,h264_nvenc,h264_amf,libx264,aac,wrapped_avframe,pcm_s16le \
   --enable-parser=h264,aac \
   --enable-filter=ddagrab,scale,scale_qsv,vpp_qsv,hwdownload,hwupload,format,aresample,amix,anullsrc,null,setpts,trim \
-  --enable-bsf=h264_mp4toannexb,aac_adtstoasc \
-  --pkg-config-flags=--static \
-  --extra-ldflags="-static -static-libgcc"
+  --enable-bsf=h264_mp4toannexb,aac_adtstoasc
 
 echo "Compilando..."
 make -j"$(nproc)"

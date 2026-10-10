@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$Msys2Root = 'C:\msys64',
-    [string]$FfmpegVersion = 'n7.1',
+    [string]$FfmpegVersion = 'n9.0.2',
     [switch]$InstallDeps
 )
 
@@ -28,7 +28,7 @@ $msysOut = "$msysRoot/tools/ffmpeg-build"
 if ($InstallDeps) {
     Write-Output "=== Instalando dependencias de MSYS2 MINGW64 ==="
     $env:MSYSTEM = 'MINGW64'
-    & $bash -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-toolchain mingw-w64-x86_64-nasm mingw-w64-x86_64-yasm mingw-w64-x86_64-pkgconf mingw-w64-x86_64-libx264 mingw-w64-x86_64-onevpl mingw-w64-x86_64-nv-codec-headers mingw-w64-x86_64-amf-headers"
+    & $bash -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-toolchain mingw-w64-x86_64-nasm mingw-w64-x86_64-yasm mingw-w64-x86_64-pkgconf mingw-w64-x86_64-libx264 mingw-w64-x86_64-libvpl mingw-w64-x86_64-ffnvcodec-headers mingw-w64-x86_64-amf-headers make"
     if ($LASTEXITCODE -ne 0) { Write-Output "ERROR instalando dependencias"; exit 1 }
 }
 
@@ -44,7 +44,18 @@ $assetsDir = Join-Path $root 'src\ScreenRecorder.UI'
 Copy-Item $built (Join-Path $assetsDir 'WmvCoreHost.exe') -Force
 Copy-Item $built (Join-Path $assetsDir 'WCodecHost.exe') -Force
 
+# DLL de runtime que el binario a medida necesita (enlazado dinámico). Se copian junto a los
+# ejecutables y se empaquetan en el MSI. Los nombres pueden variar con actualizaciones de MSYS2,
+# por eso se copian por patrón.
+$mingwBin = Join-Path $Msys2Root 'mingw64\bin'
+foreach ($pat in @('libvpl*.dll','libx264*.dll','libwinpthread*.dll','libgcc_s*.dll','libstdc++*.dll')) {
+    Get-ChildItem -Path $mingwBin -Filter $pat -File -ErrorAction SilentlyContinue | ForEach-Object {
+        Copy-Item $_.FullName (Join-Path $assetsDir $_.Name) -Force
+        Write-Output "  + $($_.Name)"
+    }
+}
+
 Write-Output ""
 Write-Output "OK: FFmpeg a medida instalado en el proyecto:"
-Get-Item (Join-Path $assetsDir 'WmvCoreHost.exe'), (Join-Path $assetsDir 'WCodecHost.exe') |
-    ForEach-Object { "  $($_.Name)  $([math]::Round($_.Length / 1MB, 1)) MB" }
+Get-ChildItem $assetsDir -File | Where-Object { $_.Name -match '^(WmvCoreHost|WCodecHost)\.exe$|^lib.*\.dll$' } |
+    ForEach-Object { "  $($_.Name)  $([math]::Round($_.Length / 1MB, 2)) MB" }

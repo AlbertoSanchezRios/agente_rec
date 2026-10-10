@@ -34,6 +34,22 @@
           Link="WCodecHost.exe"
           CopyToOutputDirectory="PreserveNewest"
           CopyToPublishDirectory="PreserveNewest" />
+    <!-- DLL de runtime de la FFmpeg a medida (enlazado dinámico): deben ir junto a los ejecutables. -->
+    <None Include="..\ScreenRecorder.UI\libvpl*.dll"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\ScreenRecorder.UI\libx264*.dll"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\ScreenRecorder.UI\libwinpthread*.dll"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\ScreenRecorder.UI\libgcc_s*.dll"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\ScreenRecorder.UI\libstdc++*.dll"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
