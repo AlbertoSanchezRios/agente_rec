@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
@@ -64,7 +65,7 @@ public sealed class ConversionService
             // explícito para no depender de la extensión.
             var tempMp4 = mp4Path + "." + Guid.NewGuid().ToString("N") + ".tmp.mp4";
 
-            var encoderArgs = RemuxOnly ? "-c:v copy" : await GetEncoderArgsAsync(cancellationToken);
+            var encoderArgs = RemuxOnly ? "-c:v copy" : await GetEncoderArgsAsync(mkvPath, cancellationToken);
             // -err_detect ignore_err + -fflags +genpts: reparan fragmentos truncados (decodifica
             // hasta el primer error y regenera timestamps). -movflags +faststart deja el índice
             // al principio. -f mp4 fuerza el muxer (no depende de la extensión).
@@ -109,33 +110,62 @@ public sealed class ConversionService
         return exit == 0;
     }
 
-    private Task<string> GetEncoderArgsAsync(CancellationToken cancellationToken)
+    private Task<string> GetEncoderArgsAsync(string sampleInput, CancellationToken cancellationToken)
     {
         if (_cachedEncoderArgs != null) return Task.FromResult(_cachedEncoderArgs);
         return Task.Run(() =>
         {
             // `-encoders` escribe la lista en STDOUT (RunProcess captura ambos flujos).
             var (_, text) = RunProcess("-hide_banner -encoders", TimeSpan.FromSeconds(15));
-            _cachedEncoderArgs = SelectEncoderArgs(text);
+            foreach (var candidate in CandidateEncoderArgs(text))
+            {
+                // libx264 (último de la lista) siempre funciona: no se sondea.
+                if (candidate.Contains("libx264", StringComparison.Ordinal) || ProbeEncoder(candidate, sampleInput))
+                {
+                    _cachedEncoderArgs = candidate;
+                    break;
+                }
+                _logger.LogInfo($"Encoder de conversión no operativo en este equipo; probando el siguiente: {candidate}");
+            }
+            _cachedEncoderArgs ??= LibX264Args;
             _logger.LogInfo($"Encoder de conversión elegido: {_cachedEncoderArgs}");
             return _cachedEncoderArgs;
         }, cancellationToken);
     }
 
     /// <summary>
-    /// Elige los argumentos del encoder de conversión a partir de la salida de `ffmpeg -encoders`.
-    /// Función pura (testeable): prefiere hardware (QSV &gt; NVENC &gt; AMF) y cae a libx264.
+    /// Sondea que un encoder funcione REALMENTE en este equipo (los *_qsv/*_nvenc/*_amf
+    /// aparecen en `-encoders` aunque no haya hardware compatible). Codifica 1 frame del propio
+    /// fragmento de entrada y comprueba el código de salida.
     /// </summary>
-    public static string SelectEncoderArgs(string encodersText)
+    private bool ProbeEncoder(string encArgs, string sampleInput)
     {
-        if (encodersText.Contains("h264_qsv", StringComparison.Ordinal))
-            return "-c:v h264_qsv -preset veryfast -global_quality 26";
-        if (encodersText.Contains("h264_nvenc", StringComparison.Ordinal))
-            return "-c:v h264_nvenc -preset p1 -cq 28 -pix_fmt yuv420p";
-        if (encodersText.Contains("h264_amf", StringComparison.Ordinal))
-            return "-c:v h264_amf -quality speed -rc cqp -qp_i 28 -qp_p 28 -pix_fmt yuv420p";
-        return "-c:v libx264 -preset ultrafast -crf 23 -threads 1 -pix_fmt yuv420p";
+        var args = $"-hide_banner -loglevel error -i \"{sampleInput}\" -map 0:v -frames:v 1 -an {encArgs} -f null -";
+        var (exit, _) = RunProcess(args, TimeSpan.FromSeconds(30));
+        return exit == 0;
     }
+
+    private const string LibX264Args = "-c:v libx264 -preset ultrafast -crf 23 -threads 1 -pix_fmt yuv420p";
+
+    /// <summary>
+    /// Orden de preferencia de encoders de conversión presentes en la salida de `ffmpeg -encoders`
+    /// (hardware primero; libx264 siempre al final). Función pura, testeable.
+    /// </summary>
+    public static IReadOnlyList<string> CandidateEncoderArgs(string encodersText)
+    {
+        var list = new List<string>();
+        if (encodersText.Contains("h264_qsv", StringComparison.Ordinal))
+            list.Add("-c:v h264_qsv -preset veryfast -global_quality 26");
+        if (encodersText.Contains("h264_nvenc", StringComparison.Ordinal))
+            list.Add("-c:v h264_nvenc -preset p1 -cq 28 -pix_fmt yuv420p");
+        if (encodersText.Contains("h264_amf", StringComparison.Ordinal))
+            list.Add("-c:v h264_amf -quality speed -rc cqp -qp_i 28 -qp_p 28 -pix_fmt yuv420p");
+        list.Add(LibX264Args);
+        return list;
+    }
+
+    /// <summary>Primer encoder de la lista de preferencia (para pruebas/diagnóstico).</summary>
+    public static string SelectEncoderArgs(string encodersText) => CandidateEncoderArgs(encodersText)[0];
 
     /// <summary>Construye los argumentos de conversión MKV→MP4 (función pura, testeable).</summary>
     public static string BuildConversionArgs(string mkvPath, string tempMp4, string encoderArgs, bool remuxOnly)

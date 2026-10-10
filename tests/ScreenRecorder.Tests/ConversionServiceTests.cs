@@ -22,6 +22,27 @@ public class ConversionServiceTests
     }
 
     [Fact]
+    public void CandidateEncoderArgs_OrdersHardwareFirstAndX264Last()
+    {
+        var text = " V....D h264_qsv ...\n V....D h264_nvenc ...\n V....D h264_amf ...\n V....D libx264 ...";
+        var candidates = ConversionService.CandidateEncoderArgs(text);
+
+        Assert.Equal(4, candidates.Count);
+        Assert.Contains("h264_qsv", candidates[0]);
+        Assert.Contains("h264_nvenc", candidates[1]);
+        Assert.Contains("h264_amf", candidates[2]);
+        Assert.Contains("libx264", candidates[^1]);
+    }
+
+    [Fact]
+    public void CandidateEncoderArgs_AlwaysEndsWithLibx264()
+    {
+        var candidates = ConversionService.CandidateEncoderArgs("nothing here");
+        Assert.Single(candidates);
+        Assert.Contains("libx264", candidates[0]);
+    }
+
+    [Fact]
     public void BuildConversionArgs_ForcesMp4MuxerAndFaststart()
     {
         var args = ConversionService.BuildConversionArgs(
