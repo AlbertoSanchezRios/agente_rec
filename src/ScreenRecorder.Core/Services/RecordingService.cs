@@ -20,6 +20,7 @@ public class RecordingService : IRecordingService
     private readonly IFileManagementService _fileManagementService;
     private readonly ICapturePipelineProbe _pipelineProbe;
     private readonly UploadQueueService _uploadQueue;
+    private readonly FragmentPipelineService _fragmentPipeline;
     private readonly string _ffmpegPath;
     private readonly string _tempDirectory;
 
@@ -56,6 +57,7 @@ public class RecordingService : IRecordingService
         _fileManagementService = fileManagementService;
         _pipelineProbe = pipelineProbe;
         _uploadQueue = new UploadQueueService(logger);
+        _fragmentPipeline = new FragmentPipelineService(logger, fileManagementService);
 
         _ffmpegPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, Constants.AppConstants.FFmpegExeName);
         _tempDirectory = ResolveTempDirectory();
@@ -270,9 +272,11 @@ public class RecordingService : IRecordingService
         {
             _orphanUploadInProgress = true;
             var cutoff = DateTime.Now.AddMinutes(-2);
-            // *.mp4 = fragmentos cerrados que nunca se subieron; *.recording.mp4 = restos de
-            // un corte de luz/proceso matado (se renombran a .mp4 antes de encolar).
-            var orphans = Directory.GetFiles(_tempDirectory, "*.mp4")
+            // *.mkv/*.mp4 = fragmentos cerrados que nunca se procesaron; *.recording.* = restos de
+            // un corte de luz/proceso matado (se renombran antes de encolar).
+            var orphans = Directory.GetFiles(_tempDirectory, "*.mkv")
+                .Concat(Directory.GetFiles(_tempDirectory, "*.mp4"))
+                .Concat(Directory.GetFiles(_tempDirectory, "*.recording.mkv"))
                 .Concat(Directory.GetFiles(_tempDirectory, "*.recording.mp4"))
                 .Where(f => File.GetLastWriteTime(f) < cutoff)
                 .ToList();
@@ -281,9 +285,11 @@ public class RecordingService : IRecordingService
             foreach (var orphan in orphans)
             {
                 var path = orphan;
-                if (path.EndsWith(".recording.mp4", StringComparison.OrdinalIgnoreCase))
+                if (path.EndsWith(".recording.mkv", StringComparison.OrdinalIgnoreCase) ||
+                    path.EndsWith(".recording.mp4", StringComparison.OrdinalIgnoreCase))
                 {
-                    var finalPath = path.Substring(0, path.Length - ".recording.mp4".Length) + ".mp4";
+                    var ext = path.EndsWith(".recording.mkv", StringComparison.OrdinalIgnoreCase) ? ".recording.mkv" : ".recording.mp4";
+                    var finalPath = path.Substring(0, path.Length - ext.Length) + ext.Substring(".recording".Length);
                     try
                     {
                         File.Move(path, finalPath, overwrite: true);
@@ -296,9 +302,9 @@ public class RecordingService : IRecordingService
                     }
                 }
 
-                if (!IsValidMp4(path))
+                if (!MediaValidator.IsValidMedia(path))
                 {
-                    _logger.LogError($"Fragmento pendiente INVÁLIDO descartado: {path} (0 bytes o sin cabecera MP4).");
+                    _logger.LogError($"Fragmento pendiente INVÁLIDO descartado: {path} (0 bytes o sin cabecera MKV/MP4).");
                     TryDelete(path);
                     continue;
                 }
@@ -319,9 +325,9 @@ public class RecordingService : IRecordingService
                         _uploadQueue.MarkSent(path);
                         continue;
                     }
-                    if (!IsValidMp4(path))
+                    if (!MediaValidator.IsValidMedia(path))
                     {
-                        _logger.LogError($"Pendiente inválido descartado: {path}. Cabecera: {HeaderHex(path)}");
+                        _logger.LogError($"Pendiente inválido descartado: {path}. Cabecera: {MediaValidator.HeaderHex(path)}");
                         TryDelete(path);
                         _uploadQueue.MarkSent(path);
                         continue;
@@ -329,7 +335,7 @@ public class RecordingService : IRecordingService
 
                     try
                     {
-                        var ok = await _fileManagementService.TryUploadFileAsync(path, maxRetries: 1);
+                        var ok = await _fragmentPipeline.ProcessAsync(path, maxRetries: 1);
                         if (ok)
                         {
                             _uploadQueue.MarkSent(path);
@@ -352,7 +358,7 @@ public class RecordingService : IRecordingService
                 // Subida directa (mecanismo de respaldo cuando SQLite no está disponible)
                 foreach (var path in validOrphans)
                 {
-                    try { if (await _fileManagementService.TryUploadFileAsync(path, maxRetries: 1)) subidos++; }
+                    try { if (await _fragmentPipeline.ProcessAsync(path, maxRetries: 1)) subidos++; }
                     catch (Exception exUp) { _logger.LogWarning($"Drenado directo falló para {path}: {exUp.Message}"); }
                 }
             }
@@ -396,11 +402,11 @@ public class RecordingService : IRecordingService
             {
                 var fileName = GenerateFileName(settings, fragmentNumber);
                 var finalPath = Path.Combine(_tempDirectory, fileName);
-                // El fragmento EN CURSO se escribe como .recording.mp4 y se renombra al .mp4 final
+                // El fragmento EN CURSO se escribe como .recording.mkv y se renombra al .mkv final
                 // cuando FFmpeg cierra: así un fragmento a medio escribir nunca se confunde con uno
                 // completo (la recuperación de huérfanos y la NUC solo ven archivos cerrados).
                 var recordingPath = Path.Combine(_tempDirectory,
-                    Path.GetFileNameWithoutExtension(fileName) + ".recording.mp4");
+                    Path.GetFileNameWithoutExtension(fileName) + ".recording.mkv");
 
                 _logger.LogInfo($"Iniciando fragmento {fragmentNumber + 1}: {fileName}");
 
@@ -634,44 +640,7 @@ public class RecordingService : IRecordingService
     }
 
     /// <summary>
-    /// Valida que un MP4 sea íntegro: existe, tiene un tamaño mínimo y empieza por la caja
-    /// 'ftyp'. Así la NUC nunca recibe videos de 0 bytes/corruptos ("a veces no se pueden ver").
-    /// </summary>
-    private static bool IsValidMp4(string path)
-    {
-        try
-        {
-            var fi = new FileInfo(path);
-            if (!fi.Exists || fi.Length < 1024) return false;
-            using var fs = File.OpenRead(path);
-            var head = new byte[12];
-            if (fs.Read(head, 0, 12) < 12) return false;
-            return head[4] == (byte)'f' && head[5] == (byte)'t' && head[6] == (byte)'y' && head[7] == (byte)'p';
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    /// <summary>Primeros 16 bytes del archivo en hex, para diagnosticar rechazos de validación.</summary>
-    private static string HeaderHex(string path)
-    {
-        try
-        {
-            using var fs = File.OpenRead(path);
-            var b = new byte[16];
-            var n = fs.Read(b, 0, 16);
-            return BitConverter.ToString(b, 0, n).Replace("-", " ");
-        }
-        catch
-        {
-            return "?";
-        }
-    }
-
-    /// <summary>
-    /// Finaliza un fragmento: renombra el .recording.mp4 a su nombre .mp4 final (marca de que el
+    /// Finaliza un fragmento: renombra el .recording.mkv a su nombre .mkv final (marca de que el
     /// fragmento está cerrado), notifica y lanza la subida a la ruta remota. Se usa tanto al
     /// completar el fragmento como al detener la grabación, para que el último fragmento también
     /// llegue a la NUC (antes quedaba abandonado en la carpeta temporal).
@@ -701,10 +670,10 @@ public class RecordingService : IRecordingService
             return;
         }
 
-        // No subir ni conservar fragmentos vacíos/corruptos (dejan videos "no reproducibles").
-        if (!IsValidMp4(sourcePath))
+        // No conservar fragmentos vacíos/corruptos (dejan videos "no reproducibles").
+        if (!MediaValidator.IsValidMkv(sourcePath))
         {
-            _logger.LogError($"Fragmento INVÁLIDO ({reason}) descartado: {sourcePath} (0 bytes o sin cabecera MP4). Cabecera: {HeaderHex(sourcePath)}");
+            _logger.LogError($"Fragmento INVÁLIDO ({reason}) descartado: {sourcePath} (0 bytes o sin cabecera MKV). Cabecera: {MediaValidator.HeaderHex(sourcePath)}");
             TryDelete(sourcePath);
             return;
         }
@@ -717,25 +686,27 @@ public class RecordingService : IRecordingService
 
         if (_fastShutdown)
         {
-            _logger.LogInfo("Apagado del sistema: fragmento cerrado localmente y pendiente de subida (se subirá al reanudar).");
+            // Apagado de Windows: no cabe la conversión+subida. El MKV queda íntegro y la
+            // recuperación de huérfanos lo convertirá y subirá al reanudar.
+            _logger.LogInfo("Apagado del sistema: fragmento MKV cerrado localmente y pendiente (se convertirá y subirá al reanudar).");
             return;
         }
 
-        // Subida del fragmento actualizando estado en la cola duradera
+        // Conversión MKV→MP4 verificada + subida, actualizando el estado en la cola duradera.
         if (waitForUpload)
         {
             _uploadQueue.TryClaim(sourcePath);
-            var ok = await _fileManagementService.TryUploadFileAsync(sourcePath, maxRetries: 3);
+            var ok = await _fragmentPipeline.ProcessAsync(sourcePath, maxRetries: 3);
             if (ok) _uploadQueue.MarkSent(sourcePath);
             else _uploadQueue.MarkFailed(sourcePath);
         }
         else
         {
-            // Reclamar lease inmediato para que el drenado periódico no duplique la subida
+            // Reclamar lease inmediato para que el drenado periódico no duplique el trabajo.
             _uploadQueue.TryClaim(sourcePath);
             _ = Task.Run(async () =>
             {
-                var ok = await _fileManagementService.TryUploadFileAsync(sourcePath, maxRetries: 3);
+                var ok = await _fragmentPipeline.ProcessAsync(sourcePath, maxRetries: 3);
                 if (ok) _uploadQueue.MarkSent(sourcePath);
                 else _uploadQueue.MarkFailed(sourcePath);
             });
@@ -779,8 +750,8 @@ public class RecordingService : IRecordingService
         }
         if (stdinIsAudio)
         {
-            // El stdin transporta audio: no se puede enviar 'q'. Matar es seguro: el MP4
-            // fragmentado (empty_moov) queda íntegro y reproducible.
+            // El stdin transporta audio: no se puede enviar 'q'. Matar es seguro: el MKV
+            // (contenedor robusto) queda íntegro y la conversión posterior lo repara si hiciera falta.
             SafeKillFfmpegProcess(process, _logger);
             await Task.Run(() => process.WaitForExit(5000));
             process.Dispose();
@@ -917,7 +888,7 @@ public class RecordingService : IRecordingService
                 // (C#) enviando PCM por named pipe a FFmpeg (que no soporta WASAPI).
                 // El PCM va por el STDIN de FFmpeg (pipe:0): sin paths de pipes nombrados,
                 // sin escaping, sin ACL. Al no poder usar stdin para 'q', la parada es por Kill
-                // (el MP4 fragmentado sobrevive igual).
+                // (el MKV sobrevive igual).
                 systemAudioInput = "-f s16le -ar " + _loopback.SampleRate + " -ac " + _loopback.Channels +
                                    " -i pipe:0";
                 _logger.LogInfo($"Audio del sistema: WASAPI loopback propio ({_loopback.SampleRate} Hz, {_loopback.Channels} canales)");
@@ -1054,9 +1025,10 @@ public class RecordingService : IRecordingService
             args.Append("-c:v libx264 -preset ultrafast -crf 23 -threads 2 -pix_fmt yuv420p ");
         }
 
-        // MP4 fragmentado: reproducible incluso si FFmpeg es terminado abruptamente.
+        // Contenedor MKV: robusto ante terminaciones abruptas (no requiere índice al final) y
+        // base para la conversión posterior a MP4 verificada (FragmentPipelineService).
         args.Append($"-c:a aac -b:a 128k ");
-        args.Append($"-movflags frag_keyframe+empty_moov ");
+        args.Append($"-f matroska ");
         args.Append($"\"{outputPath}\"");
 
         return args.ToString();
@@ -1097,6 +1069,6 @@ public class RecordingService : IRecordingService
             fileName += $"-Fragment{fragmentNumber}";
         }
 
-        return $"{fileName}.mp4";
+        return $"{fileName}.mkv";
     }
 }

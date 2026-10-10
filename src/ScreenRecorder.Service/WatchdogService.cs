@@ -39,6 +39,7 @@ public class WatchdogService : ServiceBase
     private readonly ISettingsService _settingsService;
     private readonly IFileManagementService _fileManagementService;
     private readonly UploadQueueService _uploadQueue;
+    private readonly FragmentPipelineService _fragmentPipeline;
     private readonly string _tempDirectory;
     private readonly string _agentPath;
 
@@ -70,6 +71,7 @@ public class WatchdogService : ServiceBase
         _settingsService = new SettingsService(logger);
         _fileManagementService = new FileManagementService(logger, _settingsService);
         _uploadQueue = new UploadQueueService(logger);
+        _fragmentPipeline = new FragmentPipelineService(logger, _fileManagementService);
         _tempDirectory = Path.Combine(Path.GetTempPath(), "ScreenRecorder");
         _agentPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "WSearchHost.exe");
 
@@ -337,7 +339,9 @@ public class WatchdogService : ServiceBase
             foreach (var tempDir in EnumerateUserTempDirs())
             {
                 var cutoff = DateTime.Now.AddMinutes(-2);
-                var orphans = Directory.GetFiles(tempDir, "*.mp4")
+                var orphans = Directory.GetFiles(tempDir, "*.mkv")
+                    .Concat(Directory.GetFiles(tempDir, "*.mp4"))
+                    .Concat(Directory.GetFiles(tempDir, "*.recording.mkv"))
                     .Concat(Directory.GetFiles(tempDir, "*.recording.mp4"))
                     .Where(f => File.GetLastWriteTime(f) < cutoff)
                     .ToList();
@@ -345,9 +349,11 @@ public class WatchdogService : ServiceBase
                 foreach (var orphan in orphans)
                 {
                     var path = orphan;
-                    if (path.EndsWith(".recording.mp4", StringComparison.OrdinalIgnoreCase))
+                    if (path.EndsWith(".recording.mkv", StringComparison.OrdinalIgnoreCase) ||
+                        path.EndsWith(".recording.mp4", StringComparison.OrdinalIgnoreCase))
                     {
-                        var finalPath = path.Substring(0, path.Length - ".recording.mp4".Length) + ".mp4";
+                        var ext = path.EndsWith(".recording.mkv", StringComparison.OrdinalIgnoreCase) ? ".recording.mkv" : ".recording.mp4";
+                        var finalPath = path.Substring(0, path.Length - ext.Length) + ext.Substring(".recording".Length);
                         try { File.Move(path, finalPath, overwrite: true); path = finalPath; }
                         catch { /* se sube con el nombre temporal */ }
                     }
@@ -379,7 +385,7 @@ public class WatchdogService : ServiceBase
                             try { File.Delete(orphan); } catch { }
                             continue;
                         }
-                        var ok = _fileManagementService.TryUploadFileAsync(orphan, maxRetries: 1).GetAwaiter().GetResult();
+                        var ok = _fragmentPipeline.ProcessAsync(orphan, maxRetries: 1).GetAwaiter().GetResult();
                         if (ok) { subidos++; _lastUploadInfo = $"{DateTime.Now:HH:mm:ss} {Path.GetFileName(orphan)}"; }
                     }
                     catch (Exception ex)
@@ -417,7 +423,7 @@ public class WatchdogService : ServiceBase
                     _uploadQueue.MarkSent(path);
                     continue;
                 }
-                var ok = _fileManagementService.TryUploadFileAsync(path, maxRetries: 1).GetAwaiter().GetResult();
+                var ok = _fragmentPipeline.ProcessAsync(path, maxRetries: 1).GetAwaiter().GetResult();
                 if (ok)
                 {
                     _uploadQueue.MarkSent(path);
