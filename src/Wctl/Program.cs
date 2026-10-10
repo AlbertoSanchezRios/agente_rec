@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Text.Json;
 using ScreenRecorder.Core.Constants;
@@ -32,44 +33,59 @@ internal static class Program
         var parsed = Parse(args);
         var cmd = Normalize(parsed.Command);
 
-        if (cmd == null)
+        // Modo "salida a archivo": lo usa el proceso padre tras auto-elevar. El hijo elevado
+        // escribe aquí y el padre lo imprime, evitando perder la salida en una consola nueva.
+        StreamWriter? fileOut = null;
+        if (!string.IsNullOrEmpty(parsed.OutPath))
         {
-            PrintHelp();
-            return 0;
-        }
-
-        if (cmd == "help")
-        {
-            PrintHelp();
-            return 0;
-        }
-
-        // El pipe de control es solo-admin: elevarse antes de conectar si hace falta.
-        if (!NetworkPathHelper.IsProcessElevated())
-        {
-            return RelaunchElevated(args);
+            try
+            {
+                fileOut = new StreamWriter(parsed.OutPath, append: false, new System.Text.UTF8Encoding(false)) { AutoFlush = true };
+                Console.SetOut(fileOut);
+                Console.SetError(fileOut);
+            }
+            catch { fileOut = null; }
         }
 
         try
         {
-            var response = ControlClient.Send(cmd, parsed.Options, connectTimeoutMs: 2000, attempts: 3, retryDelayMs: 800);
-            if (response == null)
+            if (cmd == null || cmd == "help")
             {
-                Console.Error.WriteLine("No hay una instancia de Screen Recorder en ejecución (o no responde al canal de control).");
-                return 2;
+                PrintHelp();
+                return 0;
             }
 
-            return Print(cmd, response, parsed.Json);
+            // El pipe de control es solo-admin: elevarse antes de conectar si hace falta.
+            if (!NetworkPathHelper.IsProcessElevated())
+            {
+                return RelaunchElevated(args);
+            }
+
+            try
+            {
+                var response = ControlClient.Send(cmd, parsed.Options, connectTimeoutMs: 2000, attempts: 3, retryDelayMs: 800);
+                if (response == null)
+                {
+                    Console.Error.WriteLine("No hay una instancia de Screen Recorder en ejecución (o no responde al canal de control).");
+                    return 2;
+                }
+
+                return Print(cmd, response, parsed.Json);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                Console.Error.WriteLine("Acceso denegado al canal de control. Ejecute Wctl como administrador.");
+                return 3;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Error de control: {ex.Message}");
+                return 4;
+            }
         }
-        catch (UnauthorizedAccessException)
+        finally
         {
-            Console.Error.WriteLine("Acceso denegado al canal de control. Ejecute Wctl como administrador.");
-            return 3;
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"Error de control: {ex.Message}");
-            return 4;
+            try { fileOut?.Flush(); fileOut?.Dispose(); } catch { /* no crítico */ }
         }
     }
 
@@ -149,17 +165,27 @@ internal static class Program
 
     private static int RelaunchElevated(string[] args)
     {
+        // El hijo elevado escribe su salida en un archivo temporal que el padre imprime después,
+        // porque con 'runas' (UseShellExecute) no se puede redirigir stdout directamente.
+        var temp = Path.Combine(Path.GetTempPath(), "wctl_" + Guid.NewGuid().ToString("N") + ".out");
         try
         {
+            var childArgs = string.Join(' ', args.Select(Quote).Concat(new[] { "--out", Quote(temp) }));
             var psi = new ProcessStartInfo
             {
                 UseShellExecute = true,
                 FileName = Environment.ProcessPath ?? "Wctl.exe",
-                Arguments = string.Join(' ', args.Select(Quote)),
+                Arguments = childArgs,
                 Verb = "runas"
             };
-            Process.Start(psi);
-            return 0;
+            using var child = Process.Start(psi);
+            child?.WaitForExit(180000);
+
+            if (File.Exists(temp))
+            {
+                Console.Write(File.ReadAllText(temp));
+            }
+            return child?.ExitCode ?? 0;
         }
         catch (Win32Exception)
         {
@@ -172,6 +198,10 @@ internal static class Program
             Console.Error.WriteLine($"No se pudo elevar Wctl: {ex.Message}");
             return 5;
         }
+        finally
+        {
+            try { if (File.Exists(temp)) File.Delete(temp); } catch { /* no crítico */ }
+        }
     }
 
     private static string Quote(string s) => s.Contains(' ') ? $"\"{s}\"" : s;
@@ -180,6 +210,7 @@ internal static class Program
     {
         public string Command { get; set; } = string.Empty;
         public bool Json { get; set; }
+        public string? OutPath { get; set; }
         public Dictionary<string, string> Options { get; } = new(StringComparer.OrdinalIgnoreCase);
     }
 
@@ -195,6 +226,12 @@ internal static class Program
             if (token is "--json" or "-json")
             {
                 result.Json = true;
+                continue;
+            }
+
+            if (token is "--out" or "-out")
+            {
+                if (i + 1 < args.Length) result.OutPath = args[++i];
                 continue;
             }
 
