@@ -19,6 +19,7 @@ internal sealed class AgentControlHandler
     private readonly IRecordingManagerService _recordingManager;
     private readonly ISettingsService _settingsService;
     private readonly ILoggerService _logger;
+    private volatile bool _isShuttingDown;
 
     public AgentControlHandler(IRecordingManagerService recordingManager,
         ISettingsService settingsService, ILoggerService logger)
@@ -30,6 +31,11 @@ internal sealed class AgentControlHandler
 
     public ControlResponse Handle(ControlRequest request)
     {
+        if (_isShuttingDown)
+        {
+            return ControlResponse.Fail("el agente se está cerrando");
+        }
+
         var cmd = (request.Cmd ?? string.Empty).Trim().ToLowerInvariant();
         switch (cmd)
         {
@@ -62,6 +68,7 @@ internal sealed class AgentControlHandler
 
             case "echate":
             case "stop":
+                _isShuttingDown = true;
                 _logger.LogInfo($"Deteniendo grabación y cerrando la aplicación (comando '{cmd}')");
                 ControlPipe.SetStopFlag();
                 _ = Task.Run(async () =>
