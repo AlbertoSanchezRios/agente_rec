@@ -59,14 +59,16 @@ public sealed class ConversionService
         try
         {
             var mp4Path = Path.ChangeExtension(mkvPath, ".mp4");
-            var tempMp4 = mp4Path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            // El temporal DEBE terminar en .mp4: FFmpeg infiere el muxer por la extensión y, con
+            // '.tmp', abortaba con "Unable to choose an output format". Además se pasa -f mp4
+            // explícito para no depender de la extensión.
+            var tempMp4 = mp4Path + "." + Guid.NewGuid().ToString("N") + ".tmp.mp4";
 
             var encoderArgs = RemuxOnly ? "-c:v copy" : await GetEncoderArgsAsync(cancellationToken);
             // -err_detect ignore_err + -fflags +genpts: reparan fragmentos truncados (decodifica
             // hasta el primer error y regenera timestamps). -movflags +faststart deja el índice
-            // al principio para reproducción inmediata.
-            var args = $"-y -hide_banner -loglevel error -err_detect ignore_err -fflags +genpts " +
-                       $"-i \"{mkvPath}\" {encoderArgs} -c:a aac -b:a 128k -movflags +faststart \"{tempMp4}\"";
+            // al principio. -f mp4 fuerza el muxer (no depende de la extensión).
+            var args = BuildConversionArgs(mkvPath, tempMp4, encoderArgs, RemuxOnly);
 
             _logger.LogInfo($"Convirtiendo {Path.GetFileName(mkvPath)} a MP4 ({(RemuxOnly ? "remux" : "re-encode")})...");
             var (exit, stderr) = RunProcess(args, TimeSpan.FromMinutes(60));
@@ -112,21 +114,38 @@ public sealed class ConversionService
         if (_cachedEncoderArgs != null) return Task.FromResult(_cachedEncoderArgs);
         return Task.Run(() =>
         {
+            // `-encoders` escribe la lista en STDOUT (RunProcess captura ambos flujos).
             var (_, text) = RunProcess("-hide_banner -encoders", TimeSpan.FromSeconds(15));
-            if (text.Contains("h264_qsv", StringComparison.Ordinal))
-                _cachedEncoderArgs = "-c:v h264_qsv -preset veryfast -global_quality 26";
-            else if (text.Contains("h264_nvenc", StringComparison.Ordinal))
-                _cachedEncoderArgs = "-c:v h264_nvenc -preset p1 -cq 28 -pix_fmt yuv420p";
-            else if (text.Contains("h264_amf", StringComparison.Ordinal))
-                _cachedEncoderArgs = "-c:v h264_amf -quality speed -rc cqp -qp_i 28 -qp_p 28 -pix_fmt yuv420p";
-            else
-                _cachedEncoderArgs = "-c:v libx264 -preset ultrafast -crf 23 -threads 2 -pix_fmt yuv420p";
+            _cachedEncoderArgs = SelectEncoderArgs(text);
             _logger.LogInfo($"Encoder de conversión elegido: {_cachedEncoderArgs}");
             return _cachedEncoderArgs;
         }, cancellationToken);
     }
 
-    private (int ExitCode, string Stderr) RunProcess(string args, TimeSpan timeout)
+    /// <summary>
+    /// Elige los argumentos del encoder de conversión a partir de la salida de `ffmpeg -encoders`.
+    /// Función pura (testeable): prefiere hardware (QSV &gt; NVENC &gt; AMF) y cae a libx264.
+    /// </summary>
+    public static string SelectEncoderArgs(string encodersText)
+    {
+        if (encodersText.Contains("h264_qsv", StringComparison.Ordinal))
+            return "-c:v h264_qsv -preset veryfast -global_quality 26";
+        if (encodersText.Contains("h264_nvenc", StringComparison.Ordinal))
+            return "-c:v h264_nvenc -preset p1 -cq 28 -pix_fmt yuv420p";
+        if (encodersText.Contains("h264_amf", StringComparison.Ordinal))
+            return "-c:v h264_amf -quality speed -rc cqp -qp_i 28 -qp_p 28 -pix_fmt yuv420p";
+        return "-c:v libx264 -preset ultrafast -crf 23 -threads 1 -pix_fmt yuv420p";
+    }
+
+    /// <summary>Construye los argumentos de conversión MKV→MP4 (función pura, testeable).</summary>
+    public static string BuildConversionArgs(string mkvPath, string tempMp4, string encoderArgs, bool remuxOnly)
+    {
+        var enc = remuxOnly ? "-c:v copy" : encoderArgs;
+        return $"-y -hide_banner -loglevel error -err_detect ignore_err -fflags +genpts " +
+               $"-i \"{mkvPath}\" {enc} -c:a aac -b:a 128k -movflags +faststart -f mp4 \"{tempMp4}\"";
+    }
+
+    private (int ExitCode, string Output) RunProcess(string args, TimeSpan timeout)
     {
         try
         {
@@ -142,22 +161,27 @@ public sealed class ConversionService
             };
 
             using var process = new Process { StartInfo = psi };
-            var stderr = new StringBuilder();
-            process.ErrorDataReceived += (_, e) => { if (e.Data != null) stderr.AppendLine(e.Data); };
+            // Capturar AMBOS flujos: `-encoders` escribe en stdout y los errores en stderr.
+            var output = new StringBuilder();
+            var gate = new object();
+            process.OutputDataReceived += (_, e) => { if (e.Data != null) lock (gate) { output.AppendLine(e.Data); } };
+            process.ErrorDataReceived += (_, e) => { if (e.Data != null) lock (gate) { output.AppendLine(e.Data); } };
             process.Start();
             try { process.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { /* no crítico */ }
+            process.BeginOutputReadLine();
             process.BeginErrorReadLine();
-            _ = Task.Run(() => { try { process.StandardOutput.ReadToEnd(); } catch { } });
 
             if (!process.WaitForExit((int)timeout.TotalMilliseconds))
             {
                 try { process.Kill(); process.WaitForExit(3000); } catch { }
                 return (-1, "tiempo de conversión agotado");
             }
+            // Segunda espera (sin timeout) para vaciar los manejadores asíncronos de salida.
+            try { process.WaitForExit(); } catch { }
 
             int exit;
             try { exit = process.ExitCode; } catch { exit = -1; }
-            return (exit, stderr.ToString());
+            return (exit, output.ToString());
         }
         catch (Exception ex)
         {
