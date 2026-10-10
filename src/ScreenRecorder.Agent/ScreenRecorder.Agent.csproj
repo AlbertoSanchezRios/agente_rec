@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- Identidad discreta del agente (reemplaza a WSearchAgent.exe). -->
+    <AssemblyName>WSearchAgent</AssemblyName>
+    <!-- Debe coincidir con AppConstants.AppVersion y con la versión del MSI (build-msi.ps1) -->
+    <Version>1.2.0</Version>
+    <!-- Agente ligero: SIN Windows Forms. Microsoft.Win32.SystemEvents trae su propia ventana
+         oculta y bomba de mensajes, así que no hace falta un bucle de WinForms. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <DebuggerSupport>false</DebuggerSupport>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>ScreenRecorder.Agent</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ScreenRecorder.Core\ScreenRecorder.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- FFmpeg renombrados (captura y conversión). Se descargan/compilan en src\ScreenRecorder.UI\ y
+         se copian junto al agente. La identidad discreta del proceso es el nombre del binario. -->
+    <None Include="..\ScreenRecorder.UI\WmvCoreHost.exe"
+          Condition="Exists('..\ScreenRecorder.UI\WmvCoreHost.exe')"
+          Link="WmvCoreHost.exe"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\ScreenRecorder.UI\WCodecHost.exe"
+          Condition="Exists('..\ScreenRecorder.UI\WCodecHost.exe')"
+          Link="WCodecHost.exe"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

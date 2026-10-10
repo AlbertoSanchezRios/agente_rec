@@ -2,10 +2,10 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <AssemblyName>WSearchHost</AssemblyName>
+    <!-- Interfaz de configuración elevada (on-demand). El agente residente es WSearchAgent.exe. -->
+    <AssemblyName>WSearchCfg</AssemblyName>
     <!-- Debe coincidir con AppConstants.AppVersion y con la versión del MSI (build-msi.ps1) -->
     <Version>1.2.0</Version>
-    <!-- Recorte de memoria: sin tablas ICU ni anclaje de depurador (ahorra ~10-20 MB por proceso) -->
     <InvariantGlobalization>true</InvariantGlobalization>
     <DebuggerSupport>false</DebuggerSupport>
     <TargetFramework>net10.0-windows</TargetFramework>
@@ -17,14 +17,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ScreenRecorder.Core\ScreenRecorder.Core.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- FFmpeg renombrado (identidad discreta). Debe existir junto al fuente; se copia al publicar. -->
-    <None Update="WmvCoreHost.exe">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-    </None>
   </ItemGroup>
 
 </Project>

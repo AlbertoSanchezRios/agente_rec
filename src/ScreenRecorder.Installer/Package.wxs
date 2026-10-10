@@ -17,7 +17,7 @@
     Inicio para registrar la tarea programada supervisada (install-autostart.ps1, que borra
     la clave Run al registrarla). El MSI NO puede registrar la tarea programada por usuario:
     las custom actions de un MSI per-machine corren como SYSTEM y quedaría mal registrada.
-  - Al actualizar: escribe la bandera 'stopped' y mata WSearchHost.exe antes de copiar
+  - Al actualizar: escribe la bandera 'stopped' y mata WSearchAgent.exe antes de copiar
     archivos; la borra después. Así no hay ficheros en uso y la tarea programada lo relanza
     con el build nuevo.
 -->
@@ -36,7 +36,7 @@
                   AllowSameVersionUpgrades="yes" />
     <MediaTemplate EmbedCab="yes" />
 
-    <Icon Id="AppIcon" SourceFile="$(var.PublishDir)WSearchHost.exe" />
+    <Icon Id="AppIcon" SourceFile="$(var.PublishDir)WSearchAgent.exe" />
     <Property Id="ARPPRODUCTICON" Value="AppIcon" />
 
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
@@ -59,11 +59,23 @@
     <!-- Componentes principales -->
     <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
       <Component Id="AppExe" Guid="*">
-        <File Id="WSearchHostExe" Source="$(var.PublishDir)WSearchHost.exe" KeyPath="yes" />
+        <File Id="WSearchAgentExe" Source="$(var.PublishDir)WSearchAgent.exe" KeyPath="yes" />
       </Component>
-      <!-- FFmpeg (WmvCoreHost.exe, ~95 MB essentials): componente propio para trato de compresión -->
+      <!-- UI de configuración (WinForms, on-demand). Separada del agente residente (sin WinForms). -->
+      <Component Id="SettingsExe" Guid="*">
+        <File Id="WSearchCfgExe" Source="$(var.PublishDir)WSearchCfg.exe" KeyPath="yes" />
+      </Component>
+      <!-- CLI de control -->
+      <Component Id="WctlExe" Guid="*">
+        <File Id="WctlExeFile" Source="$(var.PublishDir)Wctl.exe" KeyPath="yes" />
+      </Component>
+      <!-- FFmpeg de captura (WmvCoreHost.exe, ~95 MB essentials): componente propio para trato de compresión -->
       <Component Id="Ffmpeg" Guid="*">
         <File Id="WmvCoreHostExe" Source="$(var.PublishDir)WmvCoreHost.exe" KeyPath="yes" />
+      </Component>
+      <!-- FFmpeg de conversión/verificación MKV→MP4 -->
+      <Component Id="Codec" Guid="*">
+        <File Id="WCodecHostExe" Source="$(var.PublishDir)WCodecHost.exe" KeyPath="yes" />
       </Component>
       <!-- Scripts de operación (NO se distribuye 'Detener ScreenRecorder.bat': la parada
            voluntaria queda reservada a TI; el pipe solo acepta clientes admin/SYSTEM) -->
@@ -94,7 +106,7 @@
                        Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
                        Name="ScreenRecorder"
                        Type="string"
-                       Value="&quot;[INSTALLFOLDER]WSearchHost.exe&quot; /background"
+                       Value="&quot;[INSTALLFOLDER]WSearchAgent.exe&quot; /background"
                        KeyPath="yes" />
       </Component>
     </ComponentGroup>
@@ -128,7 +140,7 @@
     <ComponentGroup Id="MenuComponents" Directory="MenuFolder">
       <Component Id="StartMenu" Guid="B7A2C9D1-4E3F-4A5B-9C8D-2E1F0A9B8C7D">
         <Shortcut Id="MenuConfigurar" Name="Configurar Screen Recorder"
-                  Target="[INSTALLFOLDER]WSearchHost.exe" WorkingDirectory="INSTALLFOLDER" Icon="AppIcon" />
+                  Target="[INSTALLFOLDER]WSearchCfg.exe" WorkingDirectory="INSTALLFOLDER" Icon="AppIcon" />
         <Shortcut Id="MenuVerificar" Name="Verificar autoarranque"
                   Target="[INSTALLFOLDER]Verificar Autoarranque.bat" WorkingDirectory="INSTALLFOLDER" />
         <Shortcut Id="MenuInstalarAuto" Name="Instalar autoarranque (tarea programada)"
@@ -161,14 +173,14 @@
     <!-- CustomActionData con la ruta del agente (las propiedades del MSI no están disponibles
          en CAs diferidas; se pasan con SetProperty usando el mismo Id que la CA). -->
     <SetProperty Id="CA_StopBeforeCopy" Sequence="execute" Before="CA_StopBeforeCopy"
-                 Value="[INSTALLFOLDER]WSearchHost.exe" />
+                 Value="[INSTALLFOLDER]WSearchAgent.exe" />
     <CustomAction Id="CA_StopBeforeCopy"
                   Directory="SystemFolder"
-                  ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;$d='C:\ProgramData\ScreenRecorder'; New-Item -Force -ItemType Directory -Path $d | Out-Null; Set-Content -Path (Join-Path $d 'stopped') -Value (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') -Force; $exe='[CA_StopBeforeCopy]'; if (Test-Path $exe) { &amp; $exe echate 2&gt;$null | Out-Null; $deadline=(Get-Date).AddSeconds(120); while ((Get-Process WSearchHost -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 } }; exit 0&quot;"
+                  ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;$d='C:\ProgramData\ScreenRecorder'; New-Item -Force -ItemType Directory -Path $d | Out-Null; Set-Content -Path (Join-Path $d 'stopped') -Value (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') -Force; $exe='[CA_StopBeforeCopy]'; if (Test-Path $exe) { &amp; $exe echate 2&gt;$null | Out-Null; $deadline=(Get-Date).AddSeconds(120); while ((Get-Process WSearchAgent -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 } }; exit 0&quot;"
                   Execute="deferred" Impersonate="yes" Return="ignore" />
     <CustomAction Id="CA_KillLeftovers"
                   Directory="SystemFolder"
-                  ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;taskkill /IM WSearchHost.exe /F 2&gt;$null; taskkill /IM WmvCoreHost.exe /F 2&gt;$null; exit 0&quot;"
+                  ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;taskkill /IM WSearchAgent.exe /F 2&gt;$null; taskkill /IM WmvCoreHost.exe /F 2&gt;$null; taskkill /IM WCodecHost.exe /F 2&gt;$null; exit 0&quot;"
                   Execute="deferred" Impersonate="no" Return="ignore" />
     <CustomAction Id="CA_ClearStopAfterCopy"
                   Directory="SystemFolder"
@@ -196,13 +208,13 @@
          Start-Process desde una CA impersonada heredaría el token SYSTEM de msiexec y la
          ventana quedaría invisible en la sesión 0). UILevel > 2 excluye el modo /qn.
          'perro' muestra Ajustes y, al Guardar, inicia la grabación. -->
-    <!-- WixShellExec NO admite argumentos (recibe UN solo path). Se lanza WSearchHost.exe
+    <!-- WixShellExec NO admite argumentos (recibe UN solo path). Se lanza WSearchAgent.exe
          SIN args: el propio exe auto-eleva con UAC y abre la configuración; si el agente
          ya corre, le pide el pipe con reintento. Ya NO se usa postinstall.vbs: Windows 11
          (24H2+) deshabilita VBScript por defecto y el vbs no ejecutaba (la config no se
          abría al instalar). El autoregistro del servicio lo hace CA_RegisterAutostart. -->
     <CustomAction Id="CA_SetLaunchConfig" Property="WixShellExecTarget"
-                  Value="[INSTALLFOLDER]WSearchHost.exe" />
+                  Value="[INSTALLFOLDER]WSearchCfg.exe" />
     <CustomAction Id="CA_LaunchConfig" BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)" DllEntry="WixShellExec"
                   Execute="immediate" Return="ignore" />
 

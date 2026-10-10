@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using ScreenRecorder.Core.Constants;
+using ScreenRecorder.Core.Ipc;
 using ScreenRecorder.Core.Models;
 using ScreenRecorder.Core.Services;
 

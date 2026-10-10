@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.ServiceProcess;
+using ScreenRecorder.Core.Constants;
 using ScreenRecorder.Core.Services;
 using ScreenRecorder.Core.State;
 
@@ -8,7 +9,7 @@ namespace ScreenRecorder.Service;
 
 /// <summary>
 /// Servicio Windows (LocalSystem) de supervisión de Screen Recorder:
-/// 1. Watchdog: vigila que el agente de usuario (WSearchHost.exe) esté corriendo y lo
+/// 1. Watchdog: vigila que el agente de usuario (WSearchAgent.exe) esté corriendo y lo
 ///    rearranca en la sesión interactiva si desaparece (aunque lo finalicen por la fuerza
 ///    desde el Administrador de tareas). Respeta la detención voluntaria legítima (bandera
 ///    'stopped', que solo TI puede establecer: el pipe de control ya es solo-admin).
@@ -73,7 +74,7 @@ public class WatchdogService : ServiceBase
         _uploadQueue = new UploadQueueService(logger);
         _fragmentPipeline = new FragmentPipelineService(logger, _fileManagementService);
         _tempDirectory = Path.Combine(Path.GetTempPath(), "ScreenRecorder");
-        _agentPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "WSearchHost.exe");
+        _agentPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, AppConstants.AgentExeName);
 
         ServiceName = WatchdogServiceName;
         CanStop = true;
@@ -161,7 +162,7 @@ public class WatchdogService : ServiceBase
     /// </summary>
     private void RecoverRecordingIfStale()
     {
-        var agentRunning = Process.GetProcessesByName("WSearchHost").Length > 0;
+        var agentRunning = Process.GetProcessesByName(AppConstants.AgentProcessName).Length > 0;
         if (!agentRunning)
         {
             _agentAliveSince = DateTime.MinValue;
@@ -169,7 +170,7 @@ public class WatchdogService : ServiceBase
         }
         if (_agentAliveSince == DateTime.MinValue) _agentAliveSince = DateTime.Now;
 
-        var ffmpegRunning = Process.GetProcessesByName("WmvCoreHost").Length > 0;
+        var ffmpegRunning = Process.GetProcessesByName(AppConstants.FfmpegProcessName).Length > 0;
         if (ffmpegRunning) return;
 
         // No tratar como "atascado" una pausa legítima del agente (bloqueo de sesión,
@@ -186,7 +187,7 @@ public class WatchdogService : ServiceBase
 
         try
         {
-            using var pipe = new System.IO.Pipes.NamedPipeClientStream(".", "ScreenRecorderControl", System.IO.Pipes.PipeDirection.Out);
+            using var pipe = new System.IO.Pipes.NamedPipeClientStream(".", AppConstants.PipeName, System.IO.Pipes.PipeDirection.Out);
             pipe.Connect(2000);
             var bytes = System.Text.Encoding.UTF8.GetBytes("quieto");
             pipe.Write(bytes, 0, bytes.Length);
@@ -208,8 +209,8 @@ public class WatchdogService : ServiceBase
         var path = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
             "ScreenRecorder", "watchdog-status.json");
-        var agentRunning = Process.GetProcessesByName("WSearchHost").Length > 0;
-        var ffmpegRunning = Process.GetProcessesByName("WmvCoreHost").Length > 0;
+        var agentRunning = Process.GetProcessesByName(AppConstants.AgentProcessName).Length > 0;
+        var ffmpegRunning = Process.GetProcessesByName(AppConstants.FfmpegProcessName).Length > 0;
         var stopped = IsStopFlagSet();
         var json =
             "{\n" +
@@ -237,7 +238,7 @@ public class WatchdogService : ServiceBase
     /// </summary>
     private void WatchAgent()
     {
-        var running = Process.GetProcessesByName("WSearchHost").Length > 0;
+        var running = Process.GetProcessesByName(AppConstants.AgentProcessName).Length > 0;
 
         if (running)
         {
@@ -469,7 +470,7 @@ public class WatchdogService : ServiceBase
 
         try
         {
-            var agent = Process.GetProcessesByName("WSearchHost").Length > 0 ? "corriendo" : "CAÍDO";
+            var agent = Process.GetProcessesByName(AppConstants.AgentProcessName).Length > 0 ? "corriendo" : "CAÍDO";
             var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} | {Environment.MachineName} | agente={agent} | stopped={(IsStopFlagSet() ? "si" : "no")}{Environment.NewLine}";
             try
             {

@@ -1,5 +1,5 @@
 # Instala/asegura el servicio watchdog "WSearchHostSvc" (LocalSystem, automático).
-# El servicio es el ÚNICO lanzador del agente de grabación (WSearchHost.exe):
+# El servicio es el ÚNICO lanzador del agente de grabación (WSearchAgent.exe):
 #   - Al arrancar Windows y cada 10 s vigila que el agente esté corriendo en la sesión
 #     del usuario y lo rearranca si desaparece (aunque lo finalicen por la fuerza).
 #   - Arranca el agente solo al iniciar sesión (lo levanta en cuanto detecta la sesión).
@@ -40,14 +40,14 @@ if ([string]::IsNullOrWhiteSpace($InstallDir)) {
     ) | Select-Object -Unique
 
     foreach ($c in $candidates) {
-        if (Test-Path (Join-Path $c 'WSearchHost.exe')) {
+        if (Test-Path (Join-Path $c 'WSearchAgent.exe')) {
             $InstallDir = $c
             break
         }
     }
 
     if ([string]::IsNullOrWhiteSpace($InstallDir)) {
-        Write-Output "ERROR: no se encontro WSearchHost.exe en las rutas:"
+        Write-Output "ERROR: no se encontro WSearchAgent.exe en las rutas:"
         $candidates | ForEach-Object { Write-Output "  - $_" }
         Write-Output "Indique la carpeta manualmente, por ejemplo:"
         Write-Output "  powershell -ExecutionPolicy Bypass -File `"$PSCommandPath`" -InstallDir `"C:\Call\publish\UI`""
@@ -57,7 +57,7 @@ if ([string]::IsNullOrWhiteSpace($InstallDir)) {
     Write-Output "Carpeta de la aplicacion detectada automaticamente: $InstallDir"
 }
 
-$exe = Join-Path $InstallDir 'WSearchHost.exe'
+$exe = Join-Path $InstallDir 'WSearchAgent.exe'
 
 if (-not (Test-Path $exe)) {
     Write-Output "ERROR: no se encontro $exe"

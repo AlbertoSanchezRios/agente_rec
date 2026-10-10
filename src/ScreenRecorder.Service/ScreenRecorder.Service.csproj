@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <!-- Nombre discreto del binario del servicio (misma filosofía que WSearchHost.exe). -->
+    <!-- Nombre discreto del binario del servicio (misma filosofía que WSearchAgent.exe). -->
     <AssemblyName>WSearchHostSvc</AssemblyName>
     <RootNamespace>ScreenRecorder.Service</RootNamespace>
     <TargetFramework>net10.0-windows</TargetFramework>

@@ -4,7 +4,7 @@ param([string]$TaskName = 'ScreenRecorder')
 $stopFlag = Join-Path $env:ProgramData 'ScreenRecorder\stopped'
 $exe = $null
 foreach ($c in @('C:\Program Files\ScreenRecorder', (Split-Path -Parent $MyInvocation.MyCommand.Path))) {
-    if (Test-Path (Join-Path $c 'WSearchHost.exe')) { $exe = Join-Path $c 'WSearchHost.exe'; break }
+    if (Test-Path (Join-Path $c 'WSearchAgent.exe')) { $exe = Join-Path $c 'WSearchAgent.exe'; break }
 }
 
 Write-Output "========== Diagnostico de ScreenRecorder =========="
@@ -50,7 +50,7 @@ try {
 Write-Output ""
 Write-Output "[Veredicto]"
 $statusPath = Join-Path $env:ProgramData 'ScreenRecorder\watchdog-status.json'
-$agentRunning = (@(Get-Process -Name 'WSearchHost' -ErrorAction SilentlyContinue)).Count -gt 0
+$agentRunning = (@(Get-Process -Name 'WSearchAgent' -ErrorAction SilentlyContinue)).Count -gt 0
 $ffmpegRunning = (@(Get-Process -Name 'WmvCoreHost' -ErrorAction SilentlyContinue)).Count -gt 0
 $stoppedFlag = Test-Path (Join-Path $env:ProgramData 'ScreenRecorder\stopped')
 if (Test-Path $statusPath) {
@@ -66,7 +66,7 @@ if (Test-Path $statusPath) {
     Write-Output "(Sin watchdog-status.json: el servicio nunca ha escrito estado; ¿esta instalado y en ejecucion?)"
 }
 if ($stoppedFlag) {
-    Write-Output "VEREDICTO: ⚠ PARADO VOLUNTARIAMENTE (banderin 'stopped'). Para reanudar: 'WSearchHost.exe quieto' o abrir Ajustes y Guardar."
+    Write-Output "VEREDICTO: ⚠ PARADO VOLUNTARIAMENTE (banderin 'stopped'). Para reanudar: 'WSearchAgent.exe quieto' o abrir Ajustes y Guardar."
 } elseif (-not $svcExists) {
     Write-Output "VEREDICTO: ❌ FALTA EL SERVICIO. Reinstale el MSI o ejecute 'Instalar Autoarranque.bat' como administrador."
 } elseif (-not $svcRunning) {
@@ -89,7 +89,7 @@ if (Test-Path $stopFlag) {
     Write-Output "El autoarranque NO lo revivira hasta que lo reanude. Para reanudar, cualquiera de estas:"
     if ($exe) { Write-Output "  1) `"$exe`" quieto" }
     Write-Output "  2) Abrir Ajustes (perro) y pulsar Guardar"
-    Write-Output "  3) Doble clic en WSearchHost.exe"
+    Write-Output "  3) Doble clic en WSearchAgent.exe"
 } else {
     Write-Output "No hay bandera de detencion: el autoarranque esta habilitado."
 }
@@ -97,9 +97,9 @@ if (Test-Path $stopFlag) {
 # 3) Procesos
 Write-Output ""
 Write-Output "[Procesos]"
-$ui = @(Get-Process -Name 'WSearchHost' -ErrorAction SilentlyContinue).Count
+$ui = @(Get-Process -Name 'WSearchAgent' -ErrorAction SilentlyContinue).Count
 $ffProcs = @(Get-Process -Name 'WmvCoreHost' -ErrorAction SilentlyContinue)
-Write-Output "WSearchHost.exe: $ui | WmvCoreHost.exe: $($ffProcs.Count)"
+Write-Output "WSearchAgent.exe: $ui | WmvCoreHost.exe: $($ffProcs.Count)"
 foreach ($p in $ffProcs) {
     try {
         $age = [math]::Round(((Get-Date) - $p.StartTime).TotalMinutes, 0)
@@ -134,7 +134,7 @@ public class WinEnum {
     public delegate bool EnumProc(IntPtr h, IntPtr l);
 }
 '@ -ErrorAction SilentlyContinue
-$names = @('WSearchHost', 'WmvCoreHost', 'ScreenRecorder.UI', 'ffmpeg')
+$names = @('WSearchAgent', 'WmvCoreHost', 'ScreenRecorder.UI', 'ffmpeg')
 $map = @{}
 foreach ($n in $names) { Get-Process -Name $n -ErrorAction SilentlyContinue | ForEach-Object { $map[$_.Id] = $_.ProcessName } }
 $wins = @()
@@ -214,7 +214,7 @@ if (Test-Path $tempDir) {
 }
 # Version del agente en ejecucion (detecta agentes viejos protegidos por la ACL)
 try {
-    $agent = Get-Process -Name 'WSearchHost' -ErrorAction Stop | Select-Object -First 1
+    $agent = Get-Process -Name 'WSearchAgent' -ErrorAction Stop | Select-Object -First 1
     $ver = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($agent.Path).FileVersion
     Write-Output "Version del agente en ejecucion: $ver (ruta: $($agent.Path))"
 } catch { Write-Output "Version del agente: (no hay proceso en ejecucion)" }
@@ -233,7 +233,7 @@ $ultimoDrenado = $null
 $minDesdeDrenado = $null
 $versionAgente = '?'
 try {
-    $agent = Get-Process -Name 'WSearchHost' -ErrorAction Stop | Select-Object -First 1
+    $agent = Get-Process -Name 'WSearchAgent' -ErrorAction Stop | Select-Object -First 1
     $versionAgente = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($agent.Path).FileVersion
 } catch { }
 if ($diagLog) {
@@ -252,7 +252,7 @@ if (-not $ultimoDrenado) {
     Write-Output "VEREDICTO: El drenado NO corre en esta PC (no hay ni una linea 'Drenado:' en el log de hoy)."
     Write-Output "  Casi seguro el agente en ejecucion es una version vieja (protegida por la ACL entre actualizaciones)."
     Write-Output "  Version detectada del agente: $versionAgente (se espera 1.2.0.0)."
-    Write-Output "  SOLUCION: reinicie la PC, o desde consola ELEVADA: taskkill /F /IM WSearchHost.exe"
+    Write-Output "  SOLUCION: reinicie la PC, o desde consola ELEVADA: taskkill /F /IM WSearchAgent.exe"
     Write-Output "  (el servicio lo levanta de nuevo en <=10 s con el binario nuevo)."
 } elseif ($minDesdeDrenado -ne $null -and $minDesdeDrenado -gt 6) {
     Write-Output "VEREDICTO: El drenado lleva $minDesdeDrenado min sin dar un ciclo (deberia ser cada 2 min)."

@@ -59,18 +59,18 @@ if ($svc) {
 }
 
 # 4. Detener procesos del agente y FFmpeg de forma ordenada y forzada
-Write-Host "[3/7] Cerrando procesos de grabacion (WSearchHost, WmvCoreHost)..." -ForegroundColor Yellow
+Write-Host "[3/7] Cerrando procesos de grabacion (WSearchAgent, WmvCoreHost, WCodecHost)..." -ForegroundColor Yellow
 
 # Intento de cierre ordenado con 'echate'
 $agentCandidates = @(
-    (Join-Path $installDir 'WSearchHost.exe'),
-    (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'WSearchHost.exe'),
-    (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'publish\msi\WSearchHost.exe'),
-    (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'src\ScreenRecorder.UI\bin\Release\net10.0-windows\WSearchHost.exe')
+    (Join-Path $installDir 'WSearchAgent.exe'),
+    (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'WSearchAgent.exe'),
+    (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'publish\msi\WSearchAgent.exe'),
+    (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'src\ScreenRecorder.Agent\bin\Release\net10.0-windows\WSearchAgent.exe')
 )
 
 $agentExe = $agentCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-if ($agentExe -and (Get-Process -Name 'WSearchHost' -ErrorAction SilentlyContinue)) {
+if ($agentExe -and (Get-Process -Name 'WSearchAgent' -ErrorAction SilentlyContinue)) {
     try {
         Write-Host "      Enviando orden 'echate' por IPC..." -ForegroundColor DarkGray
         $proc = Start-Process -FilePath $agentExe -ArgumentList 'echate' -PassThru -NoNewWindow
@@ -81,7 +81,7 @@ if ($agentExe -and (Get-Process -Name 'WSearchHost' -ErrorAction SilentlyContinu
 }
 
 # Red de seguridad: terminar cualquier proceso remanente
-$targetProcesses = @('WSearchHost', 'WmvCoreHost', 'WSearchHostSvc')
+$targetProcesses = @('WSearchAgent', 'WmvCoreHost', 'WCodecHost', 'WSearchHostSvc')
 foreach ($pName in $targetProcesses) {
     $running = Get-Process -Name $pName -ErrorAction SilentlyContinue
     if ($running) {
@@ -215,7 +215,7 @@ Write-Host ""
 Write-Host "=== Diagnostico Post-Desinstalacion ===" -ForegroundColor Cyan
 
 $leftoverSvc = Get-Service -Name $svcName -ErrorAction SilentlyContinue
-$leftoverProc = Get-Process -Name 'WSearchHost', 'WmvCoreHost', 'WSearchHostSvc' -ErrorAction SilentlyContinue
+$leftoverProc = Get-Process -Name 'WSearchAgent', 'WmvCoreHost', 'WSearchHostSvc' -ErrorAction SilentlyContinue
 $leftoverDir = Test-Path $installDir
 
 if (-not $leftoverSvc -and -not $leftoverProc -and -not $leftoverDir) {
