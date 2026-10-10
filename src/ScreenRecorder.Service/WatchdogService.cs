@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.ServiceProcess;
 using ScreenRecorder.Core.Services;
+using ScreenRecorder.Core.State;
 
 namespace ScreenRecorder.Service;
 
@@ -28,6 +29,11 @@ public class WatchdogService : ServiceBase
     private static readonly TimeSpan WatchdogInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan UploadInterval = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMinutes(5);
+    // Tope del backoff de relanzamiento del agente: si muere una y otra vez, se reintenta cada
+    // 5 min (evita el bucle de relanzamiento cada 10 s y el spam de logs).
+    private static readonly TimeSpan MaxRelaunchBackoff = TimeSpan.FromMinutes(5);
+    // Nº de relanzamientos fallidos a partir del cual se registra el disyuntor (una sola vez).
+    private const int CircuitBreakerThreshold = 8;
 
     private readonly ILoggerService _logger;
     private readonly ISettingsService _settingsService;
@@ -43,6 +49,10 @@ public class WatchdogService : ServiceBase
     private readonly DateTime _startedAt = DateTime.Now;
     private bool _agentSeenRunning;
     private int _restartAttempts;
+    // Próximo instante (hora local) en que se permite relanzar el agente por backoff.
+    private DateTime _nextRelaunchAllowedAt = DateTime.MinValue;
+    // El disyuntor se registra una sola vez para no inundar el log.
+    private bool _circuitBreakerLogged;
     private volatile bool _stopping;
     // "Agente vivo pero no grabando": desde cuándo se ve el agente y cuándo se mandó el último 'quieto'.
     private DateTime _agentAliveSince = DateTime.MinValue;
@@ -158,7 +168,17 @@ public class WatchdogService : ServiceBase
         if (_agentAliveSince == DateTime.MinValue) _agentAliveSince = DateTime.Now;
 
         var ffmpegRunning = Process.GetProcessesByName("WmvCoreHost").Length > 0;
-        if (ffmpegRunning || IsStopFlagSet()) return;
+        if (ffmpegRunning) return;
+
+        // No tratar como "atascado" una pausa legítima del agente (bloqueo de sesión,
+        // suspensión o conversión en curso): enviar 'quieto' en esos estados reiniciaba la
+        // captura cada ~10 min durante el bloqueo de sesión (Win+L).
+        var agentState = AgentStateStore.Get().Estado;
+        if (!WatchdogPolicy.ShouldSendQuieto(agentState, IsStopFlagSet()))
+        {
+            return;
+        }
+
         if (DateTime.Now - _agentAliveSince < TimeSpan.FromMinutes(3)) return;
         if (DateTime.Now - _lastQuietCommandAt < TimeSpan.FromMinutes(10)) return;
 
@@ -225,6 +245,8 @@ public class WatchdogService : ServiceBase
             }
             _agentSeenRunning = true;
             _restartAttempts = 0;
+            _nextRelaunchAllowedAt = DateTime.MinValue;
+            _circuitBreakerLogged = false;
             return;
         }
 
@@ -236,9 +258,29 @@ public class WatchdogService : ServiceBase
             return;
         }
 
+        // Backoff: tras un fallo de arranque se espera antes de reintentar, para no entrar en un
+        // bucle de relanzamiento cada 10 s si el agente muere nada más arrancar.
+        if (DateTime.Now < _nextRelaunchAllowedAt)
+        {
+            return;
+        }
+
         // El agente NO está corriendo y nadie lo detuvo de forma legítima: caída o manipulación.
         _restartAttempts++;
-        _logger.LogWarning($"Agente de grabación NO en ejecución sin orden de parada legítima (intento de rearranque {_restartAttempts}). " +
+        var backoff = WatchdogPolicy.ComputeRelaunchBackoff(_restartAttempts, WatchdogInterval, MaxRelaunchBackoff);
+        _nextRelaunchAllowedAt = DateTime.Now + backoff;
+
+        if (_restartAttempts >= CircuitBreakerThreshold && !_circuitBreakerLogged)
+        {
+            _circuitBreakerLogged = true;
+            _logger.LogError($"DISYUNTOR: el agente lleva {_restartAttempts} relanzamientos fallidos; " +
+                             $"los reintentos se espacian cada {MaxRelaunchBackoff.TotalMinutes:0} min. " +
+                             "Revise el log del agente y el estado con 'Verificar Autoarranque.bat'.");
+        }
+
+        var waitSeconds = Math.Max(backoff.TotalSeconds, WatchdogInterval.TotalSeconds);
+        _logger.LogWarning($"Agente de grabación NO en ejecución sin orden de parada legítima (intento de rearranque {_restartAttempts}, " +
+                           $"próximo reintento en ~{waitSeconds:0} s). " +
                            "Esto puede deberse a una finalización forzosa desde el Administrador de tareas.");
 
         if (!File.Exists(_agentPath))

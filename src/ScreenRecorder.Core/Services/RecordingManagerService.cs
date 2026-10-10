@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using ScreenRecorder.Core.Services;
+using ScreenRecorder.Core.State;
 
 namespace ScreenRecorder.Core.Services;
 
@@ -43,7 +44,8 @@ public class RecordingManagerService : IRecordingManagerService
         try
         {
             _logger.LogInfo("Iniciando RecordingManagerService");
-            
+            AgentStateStore.Set(AgentState.Iniciando, "arrancando el manager");
+
             // Iniciar monitoreo de eventos
             _eventMonitorService.StartMonitoring();
             
@@ -77,6 +79,8 @@ public class RecordingManagerService : IRecordingManagerService
 
             // Detener monitoreo
             _eventMonitorService.StopMonitoring();
+
+            AgentStateStore.Set(AgentState.Detenido, "manager detenido");
         }
         catch (Exception ex)
         {
@@ -93,11 +97,13 @@ public class RecordingManagerService : IRecordingManagerService
                 _logger.LogInfo("Iniciando grabación por login de usuario");
                 IsRecordingActive = true;
                 await _recordingService.StartRecordingAsync();
+                AgentStateStore.Set(AgentState.Grabando, "login de usuario");
             }
             catch (Exception ex)
             {
                 _logger.LogError("Error al iniciar grabación por login", ex);
                 IsRecordingActive = false;
+                AgentStateStore.Set(AgentState.Detenido, "fallo al iniciar por login");
             }
         }
     }
@@ -111,6 +117,7 @@ public class RecordingManagerService : IRecordingManagerService
                 _logger.LogInfo("Deteniendo grabación por bloqueo de sesión");
                 await _recordingService.StopRecordingAsync();
                 IsRecordingActive = false;
+                AgentStateStore.Set(AgentState.PausadoBloqueo, "sesión bloqueada (Win+L)");
             }
             catch (Exception ex)
             {
@@ -128,6 +135,7 @@ public class RecordingManagerService : IRecordingManagerService
                 _logger.LogInfo("Reanudando grabación por desbloqueo de sesión");
                 IsRecordingActive = true;
                 await _recordingService.StartRecordingAsync();
+                AgentStateStore.Set(AgentState.Grabando, "sesión desbloqueada");
             }
             catch (Exception ex)
             {
@@ -149,6 +157,7 @@ public class RecordingManagerService : IRecordingManagerService
             await _recordingService.StopRecordingAsync();
             IsRecordingActive = true;
             await _recordingService.StartRecordingAsync();
+            AgentStateStore.Set(AgentState.Grabando, "grabación reiniciada tras cambio de pantalla");
             _logger.LogInfo("Grabación reiniciada tras el cambio de pantalla");
         }
         catch (Exception ex)
@@ -169,6 +178,7 @@ public class RecordingManagerService : IRecordingManagerService
                 _logger.LogInfo("Suspensión: cerrando FFmpeg de inmediato (la grabación no corre mientras el equipo duerme)");
                 _recordingService.RequestFastShutdown();
                 IsRecordingActive = false;
+                AgentStateStore.Set(AgentState.PausadoSuspension, "sistema suspendido");
                 await Task.Delay(3000);
             }
             catch (Exception ex)
@@ -186,6 +196,7 @@ public class RecordingManagerService : IRecordingManagerService
             if (Constants.AppConstants.IsStopFlagSet())
             {
                 _logger.LogInfo("Reanudado del sistema, pero hay detención voluntaria ('stopped'): no se inicia la grabación.");
+                AgentStateStore.Set(AgentState.Detenido, "detención voluntaria activa");
                 return;
             }
             if (!IsRecordingActive)
@@ -193,6 +204,7 @@ public class RecordingManagerService : IRecordingManagerService
                 _logger.LogInfo("Reanudado del sistema: reiniciando la grabación");
                 IsRecordingActive = true;
                 await _recordingService.StartRecordingAsync();
+                AgentStateStore.Set(AgentState.Grabando, "sistema reanudado");
             }
         }
         catch (Exception ex)
@@ -214,6 +226,7 @@ public class RecordingManagerService : IRecordingManagerService
             // cualquier momento a partir de aquí.
             _logger.LogInfo("Apagado/cierre de sesión: la grabación continúa hasta el apagado final");
             _recordingService.NotifySystemEnding();
+            AgentStateStore.Set(AgentState.Detenido, "apagado/cierre de sesión");
         }
         catch (Exception ex)
         {
