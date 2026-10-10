@@ -35,13 +35,15 @@ public record CapturePipeline(
     int Fps,
     CaptureRegion Region,
     ScaleSize Scale,
-    bool DupFrames)
+    bool DupFrames,
+    bool GpuScale = false)
 {
     /// <summary>Etiqueta corta para el log de arranque.</summary>
     public string Describe() =>
         $"captura={(Backend == CaptureBackend.Dda ? $"ddagrab(idx={OutputIndex})" : "gdigrab")} " +
         $"enc={EncoderName(Encoder)} " +
         $"{Region.Size}->{Scale.Width}x{Scale.Height}@{Fps}" +
+        (GpuScale ? " gpu-scale" : "") +
         (DupFrames ? "" : " dup_frames=0");
 
     private static string EncoderName(EncoderKind enc) => enc switch

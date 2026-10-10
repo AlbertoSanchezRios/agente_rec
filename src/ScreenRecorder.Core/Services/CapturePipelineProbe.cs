@@ -98,13 +98,23 @@ public class CapturePipelineProbe : ICapturePipelineProbe
 
         _logger.LogInfo($"Sondeando pipelines de captura (region={region.Size}, idx={outputIndex}, fps={fps}, modo={(pref == 1 ? "GPU" : "Auto")})...");
 
+        // Escalado en GPU (scale_qsv): en iGPU Intel modestas (6ª-7ª gen) evita el escalado en CPU
+        // y la re-subida, reduciendo carga. Solo aplica si hay que escalar; si el build no lo
+        // soporta, el sondeo cae al pipeline clásico.
+        var needsScale = scale.Width != region.Width || scale.Height != region.Height;
+        Task<CapturePipeline?> gpuScaleQsv = needsScale
+            ? TryDdaQsvGpuScaleAsync(region, scale, outputIndex, fps, dupFrames)
+            : Task.FromResult<CapturePipeline?>(null);
+
         // Modo GPU forzado: solo sondeos DDA (caer a GDI si la GPU no sirve, mejor que no grabar).
         var chosen = pref == 1
-            ? await TryDdaQsvAsync(region, scale, outputIndex, fps, dupFrames)
+            ? await gpuScaleQsv
+                ?? await TryDdaQsvAsync(region, scale, outputIndex, fps, dupFrames)
                 ?? await TryDdaNvencAsync(region, scale, outputIndex, fps, dupFrames)
                 ?? await TryDdaAmfAsync(region, scale, outputIndex, fps, dupFrames)
                 ?? await TryDdaX264Async(region, scale, outputIndex, fps, dupFrames)
-            : await TryDdaQsvAsync(region, scale, outputIndex, fps, dupFrames)
+            : await gpuScaleQsv
+                ?? await TryDdaQsvAsync(region, scale, outputIndex, fps, dupFrames)
                 ?? await TryDdaNvencAsync(region, scale, outputIndex, fps, dupFrames)
                 ?? await TryDdaAmfAsync(region, scale, outputIndex, fps, dupFrames)
                 ?? await TryDdaX264Async(region, scale, outputIndex, fps, dupFrames)
@@ -212,6 +222,22 @@ public class CapturePipelineProbe : ICapturePipelineProbe
         var args = $"-hide_banner -loglevel error -f lavfi -i \"{filter}\" -frames:v 12 -an -c:v h264_qsv -preset veryfast -global_quality 28 -f null -";
         var ok = await ProbeAsync(args, "ddagrab+h264_qsv");
         return ok ? new CapturePipeline(CaptureBackend.Dda, outputIndex, EncoderKind.Qsv, fps, region, scale, dupFrames) : null;
+    }
+
+    /// <summary>
+    /// ddagrab + QSV con escalado en GPU (scale_qsv sobre el dispositivo QSV). En iGPU Intel
+    /// modestas (6ª-7ª gen) evita el escalado en CPU. Si el build no soporta la cadena, el sondeo
+    /// cae al pipeline clásico con escalado en CPU.
+    /// </summary>
+    private async Task<CapturePipeline?> TryDdaQsvGpuScaleAsync(CaptureRegion region, ScaleSize scale, int outputIndex, int fps, bool dupFrames)
+    {
+        var dup = dupFrames ? "" : ":dup_frames=0";
+        var filter = $"ddagrab=output_idx={outputIndex}:framerate={fps}{dup}:draw_mouse=0," +
+                     $"hwdownload,format=bgra,hwupload=extra_hw_frames=64,scale_qsv={scale.Width}:{scale.Height}";
+        var args = $"-hide_banner -loglevel error -init_hw_device qsv=hw -filter_hw_device hw " +
+                   $"-f lavfi -i \"{filter}\" -frames:v 12 -an -c:v h264_qsv -preset veryfast -global_quality 28 -f null -";
+        var ok = await ProbeAsync(args, "ddagrab+h264_qsv(gpu-scale)");
+        return ok ? new CapturePipeline(CaptureBackend.Dda, outputIndex, EncoderKind.Qsv, fps, region, scale, dupFrames, GpuScale: true) : null;
     }
 
     private async Task<CapturePipeline?> TryDdaNvencAsync(CaptureRegion region, ScaleSize scale, int outputIndex, int fps, bool dupFrames)
@@ -350,9 +376,9 @@ public class CapturePipelineProbe : ICapturePipelineProbe
         {
             if (!File.Exists(_cachePath)) return null;
             var parts = File.ReadAllText(_cachePath).Split('|');
-            // Formato v2: marca 'v2' final. Las cachés de formatos anteriores (p. ej. sin
-            // draw_mouse=0) se ignoran y la pipeline se vuelve a sondear.
-            if (parts.Length < 8 || parts[7] != "v2") return null;
+            // Formato v3: añade el flag de escalado en GPU. Las cachés anteriores se ignoran y
+            // el pipeline se vuelve a sondear.
+            if (parts.Length < 9 || parts[8] != "v3") return null;
             var backend = Enum.Parse<CaptureBackend>(parts[0]);
             var idx = int.Parse(parts[1]);
             var enc = Enum.Parse<EncoderKind>(parts[2]);
@@ -364,8 +390,9 @@ public class CapturePipelineProbe : ICapturePipelineProbe
                 : new CaptureRegion(0, 0, int.Parse(regionParts[0]), int.Parse(regionParts[1]));
             var scale = parts[5].Split('x');
             var dup = bool.Parse(parts[6]);
+            var gpuScale = bool.Parse(parts[7]);
             var scaleSize = new ScaleSize(int.Parse(scale[0]), int.Parse(scale[1]));
-            _cached = new CapturePipeline(backend, idx, enc, fps, region, scaleSize, dup);
+            _cached = new CapturePipeline(backend, idx, enc, fps, region, scaleSize, dup, gpuScale);
             return _cached;
         }
         catch
@@ -382,7 +409,7 @@ public class CapturePipelineProbe : ICapturePipelineProbe
             var dir = Path.GetDirectoryName(_cachePath);
             if (dir != null) Directory.CreateDirectory(dir);
             File.WriteAllText(_cachePath,
-                $"{p.Backend}|{p.OutputIndex}|{p.Encoder}|{p.Fps}|{p.Region.X}x{p.Region.Y}x{p.Region.Width}x{p.Region.Height}|{p.Scale.Width}x{p.Scale.Height}|{p.DupFrames}|v2");
+                $"{p.Backend}|{p.OutputIndex}|{p.Encoder}|{p.Fps}|{p.Region.X}x{p.Region.Y}x{p.Region.Width}x{p.Region.Height}|{p.Scale.Width}x{p.Scale.Height}|{p.DupFrames}|{p.GpuScale}|v3");
         }
         catch { /* la caché es opcional */ }
     }

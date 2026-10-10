@@ -846,9 +846,22 @@ public class RecordingService : IRecordingService
             // ("Impossible to convert ... src: d3d11, dst: nv12 qsv" -> toda la grabación cae).
             // El escalado sí es opcional: solo cuando la resolución objetivo difiere de la nativa.
             var needsScale = pipeline.Scale.Width != pipeline.Region.Width || pipeline.Scale.Height != pipeline.Region.Height;
-            var filter = needsScale
-                ? $"ddagrab=output_idx={pipeline.OutputIndex}:framerate={pipeline.Fps}{dup}:draw_mouse=0,hwdownload,format=bgra,scale={pipeline.Scale.Width}:{pipeline.Scale.Height}"
-                : $"ddagrab=output_idx={pipeline.OutputIndex}:framerate={pipeline.Fps}{dup}:draw_mouse=0,hwdownload,format=bgra";
+            string filter;
+            if (pipeline.GpuScale && needsScale)
+            {
+                // Escalado en GPU sobre el dispositivo QSV (más ligero en iGPU Intel modestas).
+                filter = $"ddagrab=output_idx={pipeline.OutputIndex}:framerate={pipeline.Fps}{dup}:draw_mouse=0," +
+                         $"hwdownload,format=bgra,hwupload=extra_hw_frames=64,scale_qsv={pipeline.Scale.Width}:{pipeline.Scale.Height}";
+                args.Append("-init_hw_device qsv=hw -filter_hw_device hw ");
+            }
+            else if (needsScale)
+            {
+                filter = $"ddagrab=output_idx={pipeline.OutputIndex}:framerate={pipeline.Fps}{dup}:draw_mouse=0,hwdownload,format=bgra,scale={pipeline.Scale.Width}:{pipeline.Scale.Height}";
+            }
+            else
+            {
+                filter = $"ddagrab=output_idx={pipeline.OutputIndex}:framerate={pipeline.Fps}{dup}:draw_mouse=0,hwdownload,format=bgra";
+            }
             args.Append($"-f lavfi -i \"{filter}\" ");
         }
         else
