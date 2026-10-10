@@ -72,7 +72,7 @@ public sealed class ConversionService
             var args = BuildConversionArgs(mkvPath, tempMp4, encoderArgs, RemuxOnly);
 
             _logger.LogInfo($"Convirtiendo {Path.GetFileName(mkvPath)} a MP4 ({(RemuxOnly ? "remux" : "re-encode")})...");
-            var (exit, stderr) = RunProcess(args, TimeSpan.FromMinutes(60));
+            var (exit, stderr) = await RunProcessAsync(args, TimeSpan.FromMinutes(60), cancellationToken);
 
             if (exit != 0 || !MediaValidator.IsValidMp4(tempMp4))
             {
@@ -81,7 +81,7 @@ public sealed class ConversionService
                 return null;
             }
 
-            if (!VerifyPlayable(tempMp4))
+            if (!await VerifyPlayableAsync(tempMp4, cancellationToken))
             {
                 _logger.LogError($"El MP4 convertido NO es reproducible; se descarta: {Path.GetFileName(tempMp4)}");
                 TryDelete(tempMp4);
@@ -104,33 +104,30 @@ public sealed class ConversionService
     }
 
     /// <summary>Comprueba que el MP4 se pueda decodificar de principio a fin (pasada de decode).</summary>
-    private bool VerifyPlayable(string path)
+    private async Task<bool> VerifyPlayableAsync(string path, CancellationToken cancellationToken)
     {
-        var (exit, _) = RunProcess($"-v error -xerror -i \"{path}\" -f null -", TimeSpan.FromMinutes(30));
+        var (exit, _) = await RunProcessAsync($"-nostdin -v error -xerror -i \"{path}\" -f null -", TimeSpan.FromMinutes(30), cancellationToken);
         return exit == 0;
     }
 
-    private Task<string> GetEncoderArgsAsync(string sampleInput, CancellationToken cancellationToken)
+    private async Task<string> GetEncoderArgsAsync(string sampleInput, CancellationToken cancellationToken)
     {
-        if (_cachedEncoderArgs != null) return Task.FromResult(_cachedEncoderArgs);
-        return Task.Run(() =>
+        if (_cachedEncoderArgs != null) return _cachedEncoderArgs;
+        // `-encoders` escribe la lista en STDOUT (RunProcess captura ambos flujos).
+        var (_, text) = await RunProcessAsync("-nostdin -hide_banner -encoders", TimeSpan.FromSeconds(15), cancellationToken);
+        foreach (var candidate in CandidateEncoderArgs(text))
         {
-            // `-encoders` escribe la lista en STDOUT (RunProcess captura ambos flujos).
-            var (_, text) = RunProcess("-hide_banner -encoders", TimeSpan.FromSeconds(15));
-            foreach (var candidate in CandidateEncoderArgs(text))
+            // libx264 (último de la lista) siempre funciona: no se sondea.
+            if (candidate.Contains("libx264", StringComparison.Ordinal) || await ProbeEncoderAsync(candidate, sampleInput, cancellationToken))
             {
-                // libx264 (último de la lista) siempre funciona: no se sondea.
-                if (candidate.Contains("libx264", StringComparison.Ordinal) || ProbeEncoder(candidate, sampleInput))
-                {
-                    _cachedEncoderArgs = candidate;
-                    break;
-                }
-                _logger.LogInfo($"Encoder de conversión no operativo en este equipo; probando el siguiente: {candidate}");
+                _cachedEncoderArgs = candidate;
+                break;
             }
-            _cachedEncoderArgs ??= LibX264Args;
-            _logger.LogInfo($"Encoder de conversión elegido: {_cachedEncoderArgs}");
-            return _cachedEncoderArgs;
-        }, cancellationToken);
+            _logger.LogInfo($"Encoder de conversión no operativo en este equipo; probando el siguiente: {candidate}");
+        }
+        _cachedEncoderArgs ??= LibX264Args;
+        _logger.LogInfo($"Encoder de conversión elegido: {_cachedEncoderArgs}");
+        return _cachedEncoderArgs;
     }
 
     /// <summary>
@@ -138,10 +135,10 @@ public sealed class ConversionService
     /// aparecen en `-encoders` aunque no haya hardware compatible). Codifica 1 frame del propio
     /// fragmento de entrada y comprueba el código de salida.
     /// </summary>
-    private bool ProbeEncoder(string encArgs, string sampleInput)
+    private async Task<bool> ProbeEncoderAsync(string encArgs, string sampleInput, CancellationToken cancellationToken)
     {
-        var args = $"-hide_banner -loglevel error -i \"{sampleInput}\" -map 0:v -frames:v 1 -an {encArgs} -f null -";
-        var (exit, _) = RunProcess(args, TimeSpan.FromSeconds(30));
+        var args = $"-nostdin -hide_banner -loglevel error -i \"{sampleInput}\" -map 0:v -frames:v 1 -an {encArgs} -f null -";
+        var (exit, _) = await RunProcessAsync(args, TimeSpan.FromSeconds(30), cancellationToken);
         return exit == 0;
     }
 
@@ -171,11 +168,11 @@ public sealed class ConversionService
     public static string BuildConversionArgs(string mkvPath, string tempMp4, string encoderArgs, bool remuxOnly)
     {
         var enc = remuxOnly ? "-c:v copy" : encoderArgs;
-        return $"-y -hide_banner -loglevel error -err_detect ignore_err -fflags +genpts " +
+        return $"-nostdin -y -hide_banner -loglevel error -err_detect ignore_err -fflags +genpts " +
                $"-i \"{mkvPath}\" {enc} -c:a aac -b:a 128k -movflags +faststart -f mp4 \"{tempMp4}\"";
     }
 
-    private (int ExitCode, string Output) RunProcess(string args, TimeSpan timeout)
+    private async Task<(int ExitCode, string Output)> RunProcessAsync(string args, TimeSpan timeout, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -197,17 +194,40 @@ public sealed class ConversionService
             process.OutputDataReceived += (_, e) => { if (e.Data != null) lock (gate) { output.AppendLine(e.Data); } };
             process.ErrorDataReceived += (_, e) => { if (e.Data != null) lock (gate) { output.AppendLine(e.Data); } };
             process.Start();
+            try { process.StandardInput.Close(); } catch { }
             try { process.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { /* no crítico */ }
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
 
-            if (!process.WaitForExit((int)timeout.TotalMilliseconds))
+            using var timeoutCts = new CancellationTokenSource(timeout);
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
+            try
             {
-                try { process.Kill(); process.WaitForExit(3000); } catch { }
+                await process.WaitForExitAsync(linkedCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                try
+                {
+                    if (!process.HasExited)
+                    {
+                        process.Kill();
+                        using var killCts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                        await process.WaitForExitAsync(killCts.Token);
+                    }
+                }
+                catch { }
+
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return (-1, "conversión cancelada");
+                }
                 return (-1, "tiempo de conversión agotado");
             }
-            // Segunda espera (sin timeout) para vaciar los manejadores asíncronos de salida.
-            try { process.WaitForExit(); } catch { }
+
+            // Segunda espera para vaciar los manejadores asíncronos de salida.
+            try { await process.WaitForExitAsync(); } catch { }
 
             int exit;
             try { exit = process.ExitCode; } catch { exit = -1; }

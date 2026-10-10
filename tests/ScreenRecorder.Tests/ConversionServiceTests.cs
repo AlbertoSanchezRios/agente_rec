@@ -48,6 +48,7 @@ public class ConversionServiceTests
         var args = ConversionService.BuildConversionArgs(
             @"C:\tmp\frag.mkv", @"C:\tmp\frag.tmp.mp4", "-c:v libx264 -preset ultrafast", remuxOnly: false);
 
+        Assert.Contains("-nostdin", args);
         Assert.Contains("-f mp4", args);
         Assert.Contains("-movflags +faststart", args);
         Assert.Contains("-i \"C:\\tmp\\frag.mkv\"", args);
