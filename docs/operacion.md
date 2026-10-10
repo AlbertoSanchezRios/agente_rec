@@ -28,7 +28,7 @@ powershell -ExecutionPolicy Bypass -File build-msi.ps1
 5. Descarga e instala el CLI de WiX 4.0.6 (si no estaba en la máquina).
 6. Construye el instalador final en la carpeta `dist/`:
    ```
-   dist\ScreenRecorder-1.2.0.msi
+   dist\ScreenRecorder-0.1.1.msi
    ```
 
 ---
@@ -36,7 +36,7 @@ powershell -ExecutionPolicy Bypass -File build-msi.ps1
 ## 2. Métodos de Instalación y Despliegue
 
 ### Método A: Instalación Interactiva (Recomendada para Pruebas o Equipos Individuales)
-1. Ejecuta el archivo `ScreenRecorder-1.2.0.msi` con doble clic.
+1. Ejecuta el archivo `ScreenRecorder-0.1.1.msi` con doble clic.
 2. Acepta el cuadro de elevación de privilegios (UAC).
 3. El instalador copiará los archivos a `C:\Program Files\ScreenRecorder\` y registrará el servicio `WSearchHostSvc`.
 4. Al finalizar, el asistente abrirá automáticamente la ventana de **Ajustes de Grabación** (`/postinstall`).
@@ -47,7 +47,7 @@ powershell -ExecutionPolicy Bypass -File build-msi.ps1
 Para desplegar la aplicación en decenas o cientos de computadoras sin intervención del usuario:
 
 ```cmd
-msiexec /i ScreenRecorder-1.2.0.msi /qn /norestart
+msiexec /i ScreenRecorder-0.1.1.msi /qn /norestart
 ```
 
 *Nota:* Al instalar en modo silencioso (`/qn`), el servicio supervisor se registra y arranca de inmediato, pero no se mostrará ninguna interfaz gráfica en pantalla.
@@ -60,7 +60,7 @@ Existen dos formas estándar de desinstalar el software:
    El script se auto-eleva como Administrador, establece la bandera `stopped`, detiene el servicio y los procesos, ejecuta la desinstalación formal del MSI vía `msiexec`, limpia el registro y purga las carpetas residuales en `ProgramData` y `Program Files`.
 2. **Vía Línea de Comandos / SCCM / Intune:**  
    ```cmd
-   msiexec /x ScreenRecorder-1.2.0.msi /qn /norestart
+   msiexec /x ScreenRecorder-0.1.1.msi /qn /norestart
    ```
    O ejecutando directamente el script de automatización PowerShell:
    ```powershell

@@ -1,6 +1,6 @@
 =====================================================================
   SCREEN RECORDER - GUIA DE PRUEBAS (Fase 1)
-  Instalador MSI - version 1.2.0
+  Instalador MSI - version 0.1.1 (beta)
 =====================================================================
 
 QUE INSTALA
@@ -18,10 +18,10 @@ supervisada (se reinicia solo si se cuelga). Ejecutarlo una vez con UAC.
 
 INSTALACION
 -----------
-  msiexec /i ScreenRecorder-1.2.0.msi /qn /norestart
+  msiexec /i ScreenRecorder-0.1.1.msi /qn /norestart
 
 Desinstalacion:
-  msiexec /x ScreenRecorder-1.2.0.msi /qn /norestart
+  msiexec /x ScreenRecorder-0.1.1.msi /qn /norestart
 (o desde "Aplicaciones" en Configuracion de Windows)
 
 
