@@ -22,6 +22,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="ScreenRecorder.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- FFmpeg renombrados (captura y conversión). Se descargan/compilan en src\ScreenRecorder.UI\ y
          se copian junto al agente. La identidad discreta del proceso es el nombre del binario. -->
     <None Include="..\ScreenRecorder.UI\WmvCoreHost.exe"

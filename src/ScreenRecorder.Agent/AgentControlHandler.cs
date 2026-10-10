@@ -19,24 +19,26 @@ internal sealed class AgentControlHandler
     private readonly IRecordingManagerService _recordingManager;
     private readonly ISettingsService _settingsService;
     private readonly ILoggerService _logger;
+    private readonly Action _exitAction;
     private volatile bool _isShuttingDown;
 
     public AgentControlHandler(IRecordingManagerService recordingManager,
-        ISettingsService settingsService, ILoggerService logger)
+        ISettingsService settingsService, ILoggerService logger, Action? exitAction = null)
     {
         _recordingManager = recordingManager;
         _settingsService = settingsService;
         _logger = logger;
+        _exitAction = exitAction ?? (() => Environment.Exit(0));
     }
 
-    public ControlResponse Handle(ControlRequest request)
+    public ControlResponse Handle(ControlRequest? request)
     {
         if (_isShuttingDown)
         {
             return ControlResponse.Fail("el agente se está cerrando");
         }
 
-        var cmd = (request.Cmd ?? string.Empty).Trim().ToLowerInvariant();
+        var cmd = (request?.Cmd ?? string.Empty).Trim().ToLowerInvariant();
         switch (cmd)
         {
             case "perro":
@@ -76,7 +78,7 @@ internal sealed class AgentControlHandler
                     await Task.Delay(600); // dar tiempo a que la respuesta salga por el pipe
                     try { _recordingManager.Stop(); }
                     catch (Exception ex) { _logger.LogError("Error al detener la grabación (comando 'stop')", ex); }
-                    Environment.Exit(0);
+                    _exitAction();
                 });
                 return ControlResponse.Success(new { mensaje = "detención voluntaria solicitada" });
 
@@ -152,10 +154,10 @@ internal sealed class AgentControlHandler
         };
     }
 
-    private object BuildLogs(ControlRequest request)
+    private object BuildLogs(ControlRequest? request)
     {
         var lines = 50;
-        if (request.Args != null && request.Args.TryGetValue("lines", out var raw) && int.TryParse(raw, out var n))
+        if (request?.Args != null && request.Args.TryGetValue("lines", out var raw) && int.TryParse(raw, out var n))
         {
             lines = Math.Clamp(n, 1, 2000);
         }
