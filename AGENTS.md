@@ -146,6 +146,10 @@ D:\dev\agente_rec\
    Windows otorga un presupuesto de apenas ~5 segundos durante el evento de apagado (`SessionEnding`/`WM_ENDSESSION`). Intentar subir un video de varios cientos de megabytes por SMB en ese instante causará que Windows corte el proceso de golpe. La estrategia correcta (ya implementada) es cerrar FFmpeg de inmediato, asegurar el archivo local y dejar que el servicio supervisor lo suba al volver a encender la máquina.
 3. **No cierres el agente con `Environment.Exit()` si hay un fragmento abierto:**  
    Usa la secuencia de parada ordenada de `RecordingManagerService` (`StopRecordingAsync`) para que FFmpeg cierre el contenedor MKV antes de salir. `Wctl -stop`/`echate` ya lo hace así (detiene y luego sale).
+4. **Fuerza siempre el muxer con `-f` en salidas con extensión no estándar:**  
+   Un temporal de salida terminado en `.tmp` hace que FFmpeg aborte con `Unable to choose an output format`. Pasa `-f mp4` explícito (o nombra el temporal `*.tmp.mp4`). Ya aplicado en `ConversionService`.
+5. **`ffmpeg -encoders/-devices/-formats/-hide_banner` escriben en `stdout`, no en `stderr`:**  
+   Si capturas su salida para detectar capacidades (QSV/NVENC/AMF, `ddagrab`...), lee **stdout** (o ambos flujos). Leer solo `stderr` hacía que la detección cayera siempre a `libx264`.
 
 ---
 
