@@ -62,13 +62,15 @@ project.assets.json
 
 # -----------------------------------------------------------------------
 # Binarios pesados externos (FFmpeg)
-# NOTA: WmvCoreHost.exe es el binario de FFmpeg (~211 MB).
-# No debe subirse a GitHub (supera el límite de 100 MB). Se descarga por separado.
+# NOTA: WmvCoreHost.exe / WCodecHost.exe son binarios de FFmpeg (decenas de MB).
+# No deben subirse a GitHub (supera el límite de 100 MB). Se descargan/compilan aparte.
 # -----------------------------------------------------------------------
 **/ffmpeg.exe
 **/ffprobe.exe
 **/ffplay.exe
 **/WmvCoreHost.exe
+**/WCodecHost.exe
+tools/ffmpeg-build/
 
 # -----------------------------------------------------------------------
 # Grabaciones locales y bases de datos SQLite

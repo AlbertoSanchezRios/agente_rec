@@ -51,9 +51,17 @@ if (-not (Test-Path $wix)) {
     }
 }
 
-# --- Asegurar binario de FFmpeg (WmvCoreHost.exe) ---
+# --- Asegurar binarios de FFmpeg (WmvCoreHost.exe captura, WCodecHost.exe conversión) ---
 $ffmpegTarget = Join-Path $root 'src\ScreenRecorder.UI\WmvCoreHost.exe'
-$needsDownload = (-not (Test-Path $ffmpegTarget)) -or ((Get-Item $ffmpegTarget).Length -gt 150MB)
+$codecTarget = Join-Path $root 'src\ScreenRecorder.UI\WCodecHost.exe'
+$customFfmpeg = Join-Path $root 'tools\ffmpeg-build\ffmpeg.exe'
+$usingCustom = Test-Path $customFfmpeg
+if ($usingCustom) {
+    Write-Output "=== Usando FFmpeg a medida (tools\ffmpeg-build\ffmpeg.exe) ==="
+    Copy-Item $customFfmpeg $ffmpegTarget -Force
+    Copy-Item $customFfmpeg $codecTarget -Force
+}
+$needsDownload = (-not $usingCustom) -and ((-not (Test-Path $ffmpegTarget)) -or ((Get-Item $ffmpegTarget).Length -gt 150MB))
 if ($needsDownload) {
     Write-Output "=== Asegurando FFmpeg ligero (versión essentials oficial ~95 MB) ==="
     $zipPath = Join-Path $env:TEMP 'ffmpeg_essentials.zip'
@@ -72,6 +80,13 @@ if ($needsDownload) {
     Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+# --- FFmpeg de conversión (WCodecHost.exe): copia del mismo binario con identidad distinta,
+#     para que el watchdog distinga captura (WmvCoreHost) de conversión (WCodecHost). ---
+if (-not (Test-Path $codecTarget)) {
+    Copy-Item $ffmpegTarget $codecTarget -Force
+    Write-Output "  WCodecHost.exe creado como copia de WmvCoreHost.exe"
+}
+
 # --- Extensiones de WiX (UI + Util): se restauran vía el .wixproj y se localizan en el cache nuget ---
 Write-Output "=== Restaurando extensiones de WiX ==="
 & $dotnet restore src/ScreenRecorder.Installer/ScreenRecorder.Installer.wixproj
@@ -84,14 +99,20 @@ if (-not $uiExt -or -not $utilExt) { Write-Output "ERROR: no se encontraron las 
 # 1) Publicar la UI y el servicio watchdog self-contained (incluyen runtime; no dependen
 #    de nada instalado en la PC de destino). Ambos publican a la misma carpeta: el harvest
 #    empaqueta todos los archivos (los DLLs comunes se comparten por nombre).
-Write-Output "=== Publish UI + Servicio watchdog (self-contained win-x64) ==="
+Write-Output "=== Publish UI + Agente + Servicio watchdog + Wctl (self-contained win-x64) ==="
 # Limpiar publish/msi: evita residuos de publishes anteriores (p. ej. scripts ya no distribuidos)
 # colándose en el harvest y en el MSI.
 if (Test-Path publish/msi) { Remove-Item publish/msi -Recurse -Force }
+& $dotnet publish src/ScreenRecorder.Agent/ScreenRecorder.Agent.csproj -c Release -r win-x64 --self-contained true -o publish/msi
+if ($LASTEXITCODE -ne 0) { Write-Output "ERROR en publish del agente"; exit 1 }
 & $dotnet publish src/ScreenRecorder.UI/ScreenRecorder.UI.csproj -c Release -r win-x64 --self-contained true -o publish/msi
 if ($LASTEXITCODE -ne 0) { Write-Output "ERROR en publish de la UI"; exit 1 }
 & $dotnet publish src/ScreenRecorder.Service/ScreenRecorder.Service.csproj -c Release -r win-x64 --self-contained true -o publish/msi
 if ($LASTEXITCODE -ne 0) { Write-Output "ERROR en publish del servicio"; exit 1 }
+# Wctl: se publica en la misma carpeta; comparte los DLLs de runtime ya presentes (aporta
+# solo su exe/dll y sus archivos de configuración).
+& $dotnet publish src/Wctl/Wctl.csproj -c Release -r win-x64 --self-contained true -o publish/msi
+if ($LASTEXITCODE -ne 0) { Write-Output "ERROR en publish de Wctl"; exit 1 }
 
 # 2) Recursos de operacion junto al binario
 #    NOTA: 'Detener ScreenRecorder.bat' ya NO se distribuye: la detención voluntaria ('echate')
@@ -105,7 +126,7 @@ Copy-Item src/ScreenRecorder.Installer/LEEME-PRUEBAS.txt publish/msi -Force
 #     Va INCLUIDO dentro del ComponentGroup del wxs (WiX 4 no tiene <Files> y los <Fragment>
 #     se descartan en este entorno).
 Write-Output "=== Harvest de publish/msi -> GeneratedComponents.wxi ==="
-$exclude = @('WmvCoreHost.exe','WSearchHost.exe','WSearchHostSvc.exe','createdump.exe','Instalar Autoarranque.bat','Verificar Autoarranque.bat','Desinstalar.bat','install-autostart.ps1','verify-autostart.ps1','uninstall.ps1','LEEME-PRUEBAS.txt')
+$exclude = @('WmvCoreHost.exe','WCodecHost.exe','WSearchAgent.exe','WSearchCfg.exe','WSearchHostSvc.exe','Wctl.exe','createdump.exe','Instalar Autoarranque.bat','Verificar Autoarranque.bat','Desinstalar.bat','install-autostart.ps1','verify-autostart.ps1','uninstall.ps1','LEEME-PRUEBAS.txt')
 $sb = [System.Text.StringBuilder]::new()
 [void]$sb.AppendLine('<Include xmlns="http://wixtoolset.org/schemas/v4/wxs">')
 Get-ChildItem publish/msi -File | Where-Object { $exclude -notcontains $_.Name } | Sort-Object Name | ForEach-Object {
