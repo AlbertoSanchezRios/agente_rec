@@ -14,7 +14,7 @@ on:
         default: '1.2.0'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -74,3 +74,11 @@ jobs:
           name: ScreenRecorder-MSI
           path: dist/*.msi
           if-no-files-found: error
+
+      - name: Publicar GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.msi
+          generate_release_notes: true
+
