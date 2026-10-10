@@ -335,8 +335,7 @@ static class Program
             var cutoff = DateTime.Now.AddMinutes(-2);
             var orphans = Directory.GetFiles(tempDir, "*.mp4")
                 .Concat(Directory.GetFiles(tempDir, "*.mkv"))
-                .Concat(Directory.GetFiles(tempDir, "*.recording.mp4"))
-                .Concat(Directory.GetFiles(tempDir, "*.recording.mkv"))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
                 .Where(f => File.GetLastWriteTime(f) < cutoff)
                 .ToList();
 

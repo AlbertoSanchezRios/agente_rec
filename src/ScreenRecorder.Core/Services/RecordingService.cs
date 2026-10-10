@@ -272,12 +272,11 @@ public class RecordingService : IRecordingService
         {
             _orphanUploadInProgress = true;
             var cutoff = DateTime.Now.AddMinutes(-2);
-            // *.mkv/*.mp4 = fragmentos cerrados que nunca se procesaron; *.recording.* = restos de
-            // un corte de luz/proceso matado (se renombran antes de encolar).
+            // *.mkv/*.mp4 = fragmentos cerrados que nunca se procesaron y restos *.recording.* de
+            // un corte de luz/proceso matado (GetFiles con *.mkv/*.mp4 ya incluye *.recording.*).
             var orphans = Directory.GetFiles(_tempDirectory, "*.mkv")
                 .Concat(Directory.GetFiles(_tempDirectory, "*.mp4"))
-                .Concat(Directory.GetFiles(_tempDirectory, "*.recording.mkv"))
-                .Concat(Directory.GetFiles(_tempDirectory, "*.recording.mp4"))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
                 .Where(f => File.GetLastWriteTime(f) < cutoff)
                 .ToList();
 

@@ -342,8 +342,7 @@ public class WatchdogService : ServiceBase
                 var cutoff = DateTime.Now.AddMinutes(-2);
                 var orphans = Directory.GetFiles(tempDir, "*.mkv")
                     .Concat(Directory.GetFiles(tempDir, "*.mp4"))
-                    .Concat(Directory.GetFiles(tempDir, "*.recording.mkv"))
-                    .Concat(Directory.GetFiles(tempDir, "*.recording.mp4"))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
                     .Where(f => File.GetLastWriteTime(f) < cutoff)
                     .ToList();
 
