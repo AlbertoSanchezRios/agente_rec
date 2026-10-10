@@ -64,4 +64,18 @@ public class ConversionServiceTests
         Assert.Contains("-c:v copy", args);
         Assert.DoesNotContain("ignored", args);
     }
+
+    [Fact]
+    public async System.Threading.Tasks.Task ConvertMkvToMp4Async_CancelledToken_ReturnsNullWithoutThrowing()
+    {
+        var logger = new LoggerService();
+        var service = new ConversionService(logger);
+
+        using var cts = new System.Threading.CancellationTokenSource();
+        cts.Cancel(); // Pre-cancelado
+
+        // Debe retornar null y nunca lanzar OperationCanceledException (contrato 'no lanza')
+        var result = await service.ConvertMkvToMp4Async("no_existe.mkv", cts.Token);
+        Assert.Null(result);
+    }
 }

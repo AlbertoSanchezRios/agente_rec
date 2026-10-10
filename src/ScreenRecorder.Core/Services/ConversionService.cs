@@ -56,7 +56,16 @@ public sealed class ConversionService
             return null;
         }
 
-        await Gate.WaitAsync(cancellationToken);
+        try
+        {
+            await Gate.WaitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInfo($"Conversión cancelada antes de iniciar: {Path.GetFileName(mkvPath)}");
+            return null;
+        }
+
         try
         {
             var mp4Path = Path.ChangeExtension(mkvPath, ".mp4");
@@ -76,14 +85,28 @@ public sealed class ConversionService
 
             if (exit != 0 || !MediaValidator.IsValidMp4(tempMp4))
             {
-                _logger.LogError($"Conversión falló (código {exit}): {FirstLine(stderr)}");
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    _logger.LogInfo($"Conversión cancelada: {Path.GetFileName(mkvPath)}");
+                }
+                else
+                {
+                    _logger.LogError($"Conversión falló (código {exit}): {FirstLine(stderr)}");
+                }
                 TryDelete(tempMp4);
                 return null;
             }
 
             if (!await VerifyPlayableAsync(tempMp4, cancellationToken))
             {
-                _logger.LogError($"El MP4 convertido NO es reproducible; se descarta: {Path.GetFileName(tempMp4)}");
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    _logger.LogInfo($"Verificación cancelada: {Path.GetFileName(tempMp4)}");
+                }
+                else
+                {
+                    _logger.LogError($"El MP4 convertido NO es reproducible; se descarta: {Path.GetFileName(tempMp4)}");
+                }
                 TryDelete(tempMp4);
                 return null;
             }
@@ -91,6 +114,11 @@ public sealed class ConversionService
             File.Move(tempMp4, mp4Path, overwrite: true);
             _logger.LogInfo($"Conversión verificada OK: {Path.GetFileName(mp4Path)} ({new FileInfo(mp4Path).Length} bytes)");
             return mp4Path;
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInfo($"Conversión cancelada: {Path.GetFileName(mkvPath)}");
+            return null;
         }
         catch (Exception ex)
         {
@@ -115,19 +143,33 @@ public sealed class ConversionService
         if (_cachedEncoderArgs != null) return _cachedEncoderArgs;
         // `-encoders` escribe la lista en STDOUT (RunProcess captura ambos flujos).
         var (_, text) = await RunProcessAsync("-nostdin -hide_banner -encoders", TimeSpan.FromSeconds(15), cancellationToken);
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return LibX264Args;
+        }
+
         foreach (var candidate in CandidateEncoderArgs(text))
         {
             // libx264 (último de la lista) siempre funciona: no se sondea.
             if (candidate.Contains("libx264", StringComparison.Ordinal) || await ProbeEncoderAsync(candidate, sampleInput, cancellationToken))
             {
-                _cachedEncoderArgs = candidate;
+                if (!cancellationToken.IsCancellationRequested)
+                {
+                    _cachedEncoderArgs = candidate;
+                }
                 break;
             }
             _logger.LogInfo($"Encoder de conversión no operativo en este equipo; probando el siguiente: {candidate}");
         }
-        _cachedEncoderArgs ??= LibX264Args;
-        _logger.LogInfo($"Encoder de conversión elegido: {_cachedEncoderArgs}");
-        return _cachedEncoderArgs;
+
+        if (!cancellationToken.IsCancellationRequested)
+        {
+            _cachedEncoderArgs ??= LibX264Args;
+            _logger.LogInfo($"Encoder de conversión elegido: {_cachedEncoderArgs}");
+            return _cachedEncoderArgs;
+        }
+
+        return LibX264Args;
     }
 
     /// <summary>
@@ -212,7 +254,7 @@ public sealed class ConversionService
                 {
                     if (!process.HasExited)
                     {
-                        process.Kill();
+                        process.Kill(entireProcessTree: true);
                         using var killCts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
                         await process.WaitForExitAsync(killCts.Token);
                     }
@@ -226,8 +268,8 @@ public sealed class ConversionService
                 return (-1, "tiempo de conversión agotado");
             }
 
-            // Segunda espera para vaciar los manejadores asíncronos de salida.
-            try { await process.WaitForExitAsync(); } catch { }
+            // Segunda espera para vaciar los manejadores asíncronos de salida (documentado por Microsoft).
+            try { process.WaitForExit(); } catch { }
 
             int exit;
             try { exit = process.ExitCode; } catch { exit = -1; }
