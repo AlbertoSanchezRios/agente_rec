@@ -308,8 +308,11 @@ public class RecordingService : IRecordingService
                     continue;
                 }
 
-                validOrphans.Add(path);
-                _uploadQueue.Enqueue(path);
+                if (!validOrphans.Contains(path, StringComparer.OrdinalIgnoreCase))
+                {
+                    validOrphans.Add(path);
+                    _uploadQueue.Enqueue(path);
+                }
             }
 
             var subidos = 0;

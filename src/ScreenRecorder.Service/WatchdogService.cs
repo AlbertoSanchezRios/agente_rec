@@ -361,6 +361,7 @@ public class WatchdogService : ServiceBase
                 }
             }
 
+            allOrphans = allOrphans.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             foreach (var orphan in allOrphans)
             {
                 _uploadQueue.Enqueue(orphan);
