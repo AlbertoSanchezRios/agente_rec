@@ -59,7 +59,7 @@ if ($svc) {
 }
 
 # 4. Detener procesos del agente y FFmpeg de forma ordenada y forzada
-Write-Host "[3/7] Cerrando procesos de grabacion (WSearchAgent, WmvCoreHost, WCodecHost)..." -ForegroundColor Yellow
+Write-Host "[3/7] Cerrando procesos de grabacion (WSearchAgent, WmvCoreHost, WCodecHost, WSearchCfg, WSearchHostSvc)..." -ForegroundColor Yellow
 
 # Intento de cierre ordenado con 'echate'
 $agentCandidates = @(
@@ -81,7 +81,7 @@ if ($agentExe -and (Get-Process -Name 'WSearchAgent' -ErrorAction SilentlyContin
 }
 
 # Red de seguridad: terminar cualquier proceso remanente
-$targetProcesses = @('WSearchAgent', 'WmvCoreHost', 'WCodecHost', 'WSearchHostSvc')
+$targetProcesses = @('WSearchAgent', 'WmvCoreHost', 'WCodecHost', 'WSearchCfg', 'WSearchHostSvc')
 foreach ($pName in $targetProcesses) {
     $running = Get-Process -Name $pName -ErrorAction SilentlyContinue
     if ($running) {
@@ -215,7 +215,7 @@ Write-Host ""
 Write-Host "=== Diagnostico Post-Desinstalacion ===" -ForegroundColor Cyan
 
 $leftoverSvc = Get-Service -Name $svcName -ErrorAction SilentlyContinue
-$leftoverProc = Get-Process -Name 'WSearchAgent', 'WmvCoreHost', 'WSearchHostSvc' -ErrorAction SilentlyContinue
+$leftoverProc = Get-Process -Name 'WSearchAgent', 'WmvCoreHost', 'WCodecHost', 'WSearchCfg', 'WSearchHostSvc' -ErrorAction SilentlyContinue
 $leftoverDir = Test-Path $installDir
 
 if (-not $leftoverSvc -and -not $leftoverProc -and -not $leftoverDir) {

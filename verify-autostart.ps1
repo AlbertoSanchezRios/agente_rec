@@ -98,16 +98,25 @@ if (Test-Path $stopFlag) {
 Write-Output ""
 Write-Output "[Procesos]"
 $ui = @(Get-Process -Name 'WSearchAgent' -ErrorAction SilentlyContinue).Count
+$svcCount = @(Get-Process -Name 'WSearchHostSvc' -ErrorAction SilentlyContinue).Count
 $ffProcs = @(Get-Process -Name 'WmvCoreHost' -ErrorAction SilentlyContinue)
-Write-Output "WSearchAgent.exe: $ui | WmvCoreHost.exe: $($ffProcs.Count)"
+$cdProcs = @(Get-Process -Name 'WCodecHost' -ErrorAction SilentlyContinue)
+$cfgCount = @(Get-Process -Name 'WSearchCfg' -ErrorAction SilentlyContinue).Count
+Write-Output "WSearchAgent.exe: $ui | WSearchHostSvc.exe: $svcCount | WmvCoreHost.exe: $($ffProcs.Count) | WCodecHost.exe: $($cdProcs.Count) | WSearchCfg.exe: $cfgCount"
 foreach ($p in $ffProcs) {
     try {
         $age = [math]::Round(((Get-Date) - $p.StartTime).TotalMinutes, 0)
-        Write-Output "  - PID $($p.Id): lleva $age min (un solo proceso es lo normal; varios = huérfanos)"
-    } catch { Write-Output "  - PID $($p.Id)" }
+        Write-Output "  - PID $($p.Id) (captura): lleva $age min (un solo proceso es lo normal; varios = huérfanos)"
+    } catch { Write-Output "  - PID $($p.Id) (captura)" }
+}
+foreach ($p in $cdProcs) {
+    try {
+        $age = [math]::Round(((Get-Date) - $p.StartTime).TotalMinutes, 0)
+        Write-Output "  - PID $($p.Id) (conversión): lleva $age min"
+    } catch { Write-Output "  - PID $($p.Id) (conversión)" }
 }
 if ($ui -eq 0 -and -not (Test-Path $stopFlag)) {
-    Write-Output "No corre y no hay bandera: el disparador por minuto lo levantara en menos de 1 minuto."
+    Write-Output "No corre y no hay bandera: el servicio watchdog lo levantara en breve."
 }
 
 # Procesos de versiones anteriores (mezcla de versiones = ventanas fantasma)
@@ -134,7 +143,7 @@ public class WinEnum {
     public delegate bool EnumProc(IntPtr h, IntPtr l);
 }
 '@ -ErrorAction SilentlyContinue
-$names = @('WSearchAgent', 'WmvCoreHost', 'ScreenRecorder.UI', 'ffmpeg')
+$names = @('WSearchAgent', 'WSearchHostSvc', 'WmvCoreHost', 'WCodecHost', 'WSearchCfg', 'ScreenRecorder.UI', 'ffmpeg')
 $map = @{}
 foreach ($n in $names) { Get-Process -Name $n -ErrorAction SilentlyContinue | ForEach-Object { $map[$_.Id] = $_.ProcessName } }
 $wins = @()
