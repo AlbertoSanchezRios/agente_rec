@@ -26,21 +26,6 @@
   <Component Id="C_Gen_hostpolicy_dll" Guid="*">
     <File Id="Gen_hostpolicy_dll" Source="$(var.PublishDir)hostpolicy.dll" KeyPath="yes" />
   </Component>
-  <Component Id="C_Gen_libgcc_s_seh_1_dll" Guid="*">
-    <File Id="Gen_libgcc_s_seh_1_dll" Source="$(var.PublishDir)libgcc_s_seh-1.dll" KeyPath="yes" />
-  </Component>
-  <Component Id="C_Gen_libstdc___6_dll" Guid="*">
-    <File Id="Gen_libstdc___6_dll" Source="$(var.PublishDir)libstdc++-6.dll" KeyPath="yes" />
-  </Component>
-  <Component Id="C_Gen_libvpl_2_dll" Guid="*">
-    <File Id="Gen_libvpl_2_dll" Source="$(var.PublishDir)libvpl-2.dll" KeyPath="yes" />
-  </Component>
-  <Component Id="C_Gen_libwinpthread_1_dll" Guid="*">
-    <File Id="Gen_libwinpthread_1_dll" Source="$(var.PublishDir)libwinpthread-1.dll" KeyPath="yes" />
-  </Component>
-  <Component Id="C_Gen_libx264_165_dll" Guid="*">
-    <File Id="Gen_libx264_165_dll" Source="$(var.PublishDir)libx264-165.dll" KeyPath="yes" />
-  </Component>
   <Component Id="C_Gen_Microsoft_CSharp_dll" Guid="*">
     <File Id="Gen_Microsoft_CSharp_dll" Source="$(var.PublishDir)Microsoft.CSharp.dll" KeyPath="yes" />
   </Component>
