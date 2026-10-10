@@ -141,8 +141,11 @@ static class Program
             logger.LogInfo($"Screen Recorder agente iniciado (modo: {command})");
 
             // Anti-manipulación del agente.
-            ProcessProtection.DenyTerminateForUsers(
-                Process.GetCurrentProcess(), logger, "WSearchAgent.exe (agente de grabación)");
+            using (var currentProcess = Process.GetCurrentProcess())
+            {
+                ProcessProtection.DenyTerminateForUsers(
+                    currentProcess, logger, "WSearchAgent.exe (agente de grabación)");
+            }
 
             // Servidor de control (JSON de Wctl + comandos legacy).
             var handler = new AgentControlHandler(recordingManager, settingsService, logger);
@@ -290,24 +293,28 @@ static class Program
             {
                 var ffmpegPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, exeName);
                 var processName = Path.GetFileNameWithoutExtension(ffmpegPath);
-                foreach (var p in Process.GetProcessesByName(processName))
+                var processes = Process.GetProcessesByName(processName);
+                foreach (var p in processes)
                 {
-                    try
+                    using (p)
                     {
-                        if (string.Equals(p.MainModule?.FileName, ffmpegPath, StringComparison.OrdinalIgnoreCase))
+                        try
                         {
-                            string age;
-                            try { age = $" (en ejecución desde {p.StartTime:HH:mm:ss}, hace {DateTime.Now - p.StartTime:hh\\:mm})"; }
-                            catch { age = string.Empty; }
-                            logger.LogWarning($"Finalizando {exeName} huérfano (PID {p.Id}){age} de una instancia anterior terminada abruptamente");
-                            ProcessProtection.ResetDacl(p, logger);
-                            p.Kill();
-                            p.WaitForExit(3000);
+                            if (string.Equals(p.MainModule?.FileName, ffmpegPath, StringComparison.OrdinalIgnoreCase))
+                            {
+                                string age;
+                                try { age = $" (en ejecución desde {p.StartTime:HH:mm:ss}, hace {DateTime.Now - p.StartTime:hh\\:mm})"; }
+                                catch { age = string.Empty; }
+                                logger.LogWarning($"Finalizando {exeName} huérfano (PID {p.Id}){age} de una instancia anterior terminada abruptamente");
+                                ProcessProtection.ResetDacl(p, logger);
+                                p.Kill();
+                                p.WaitForExit(3000);
+                            }
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.LogWarning($"No se pudo finalizar el proceso huérfano PID {p.Id}: {ex.Message}");
+                        catch (Exception ex)
+                        {
+                            logger.LogWarning($"No se pudo finalizar el proceso huérfano PID {p.Id}: {ex.Message}");
+                        }
                     }
                 }
             }

@@ -140,7 +140,7 @@ public class WatchdogService : ServiceBase
             query.WaitForExit(10000);
             if (query.ExitCode != 0) return; // no existe: nada que limpiar
 
-            var del = Process.Start(new ProcessStartInfo
+            using var del = Process.Start(new ProcessStartInfo
             {
                 FileName = "schtasks.exe",
                 Arguments = "/Delete /TN \"ScreenRecorder\" /F",
@@ -162,7 +162,7 @@ public class WatchdogService : ServiceBase
     /// </summary>
     private void RecoverRecordingIfStale()
     {
-        var agentRunning = Process.GetProcessesByName(AppConstants.AgentProcessName).Length > 0;
+        var agentRunning = ProcessHelper.IsProcessRunning(AppConstants.AgentProcessName);
         if (!agentRunning)
         {
             _agentAliveSince = DateTime.MinValue;
@@ -170,7 +170,7 @@ public class WatchdogService : ServiceBase
         }
         if (_agentAliveSince == DateTime.MinValue) _agentAliveSince = DateTime.Now;
 
-        var ffmpegRunning = Process.GetProcessesByName(AppConstants.FfmpegProcessName).Length > 0;
+        var ffmpegRunning = ProcessHelper.IsProcessRunning(AppConstants.FfmpegProcessName);
         if (ffmpegRunning) return;
 
         // No tratar como "atascado" una pausa legítima del agente (bloqueo de sesión,
@@ -209,8 +209,8 @@ public class WatchdogService : ServiceBase
         var path = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
             "ScreenRecorder", "watchdog-status.json");
-        var agentRunning = Process.GetProcessesByName(AppConstants.AgentProcessName).Length > 0;
-        var ffmpegRunning = Process.GetProcessesByName(AppConstants.FfmpegProcessName).Length > 0;
+        var agentRunning = ProcessHelper.IsProcessRunning(AppConstants.AgentProcessName);
+        var ffmpegRunning = ProcessHelper.IsProcessRunning(AppConstants.FfmpegProcessName);
         var stopped = IsStopFlagSet();
         var json =
             "{\n" +
@@ -238,7 +238,7 @@ public class WatchdogService : ServiceBase
     /// </summary>
     private void WatchAgent()
     {
-        var running = Process.GetProcessesByName(AppConstants.AgentProcessName).Length > 0;
+        var running = ProcessHelper.IsProcessRunning(AppConstants.AgentProcessName);
 
         if (running)
         {
@@ -469,7 +469,7 @@ public class WatchdogService : ServiceBase
 
         try
         {
-            var agent = Process.GetProcessesByName(AppConstants.AgentProcessName).Length > 0 ? "corriendo" : "CAÍDO";
+            var agent = ProcessHelper.IsProcessRunning(AppConstants.AgentProcessName) ? "corriendo" : "CAÍDO";
             var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} | {Environment.MachineName} | agente={agent} | stopped={(IsStopFlagSet() ? "si" : "no")}{Environment.NewLine}";
             try
             {
