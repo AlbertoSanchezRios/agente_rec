@@ -1012,7 +1012,9 @@ public class RecordingService : IRecordingService
         // quedarse consumiendo un input continuo (p. ej. el audio por pipe:0) y NUNCA leer
         // el video -> fragmento vacío (verificado en prueba real). Con -t ambos inputs
         // fluyen y, además, el fragmento finaliza limpio (flush) sin depender del kill.
+        // -filter_threads 1 reduce buffers/memoria del grafo de filtros (equipos modestos).
         var durationSec = Math.Clamp(settings.FragmentDurationMinutes, 1, 120) * 60;
+        args.Append($"-filter_threads 1 ");
         args.Append($"-t {durationSec} ");
 
         // Codec de video según el encoder sondeado.
@@ -1035,7 +1037,8 @@ public class RecordingService : IRecordingService
         {
             // ultrafast: ~la mitad de CPU que veryfast a cambio de más bitrate (única opción
             // razonable cuando no hay aceleración por GPU en equipos modestos, p. ej. i5 de 4 núcleos).
-            args.Append("-c:v libx264 -preset ultrafast -crf 23 -threads 2 -pix_fmt yuv420p ");
+            // -threads 1: menos buffers de encoder => menos RAM (ultrafast sobra para 15 fps).
+            args.Append("-c:v libx264 -preset ultrafast -crf 23 -threads 1 -pix_fmt yuv420p ");
         }
 
         // Contenedor MKV: robusto ante terminaciones abruptas (no requiere índice al final) y
