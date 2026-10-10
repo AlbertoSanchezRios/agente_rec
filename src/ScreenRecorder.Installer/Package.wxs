@@ -180,7 +180,7 @@
                   Execute="deferred" Impersonate="yes" Return="ignore" />
     <CustomAction Id="CA_KillLeftovers"
                   Directory="SystemFolder"
-                  ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;taskkill /IM WSearchAgent.exe /F 2&gt;$null; taskkill /IM WmvCoreHost.exe /F 2&gt;$null; taskkill /IM WCodecHost.exe /F 2&gt;$null; exit 0&quot;"
+                  ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;taskkill /IM WSearchAgent.exe /F 2&gt;$null; taskkill /IM WmvCoreHost.exe /F 2&gt;$null; taskkill /IM WCodecHost.exe /F 2&gt;$null; taskkill /IM WSearchCfg.exe /F 2&gt;$null; exit 0&quot;"
                   Execute="deferred" Impersonate="no" Return="ignore" />
     <CustomAction Id="CA_ClearStopAfterCopy"
                   Directory="SystemFolder"
