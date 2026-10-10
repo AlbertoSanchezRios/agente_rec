@@ -183,7 +183,7 @@ static class Program
                 return;
             }
 
-            Process.Start(new ProcessStartInfo
+            using var proc = Process.Start(new ProcessStartInfo
             {
                 UseShellExecute = true,
                 FileName = exe,
@@ -213,7 +213,7 @@ static class Program
                 Arguments = arguments,
                 Verb = "runas"
             };
-            Process.Start(psi);
+            using var proc = Process.Start(psi);
             return true;
         }
         catch (Win32Exception)

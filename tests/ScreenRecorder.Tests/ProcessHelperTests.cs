@@ -29,10 +29,21 @@ public class ProcessHelperTests
         Assert.True(count >= 1);
     }
 
-    [Fact]
-    public void GetProcessCount_ReturnsZeroForNonExistentProcess()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void IsProcessRunning_ReturnsFalseForNullOrWhitespace(string? input)
     {
-        var count = ProcessHelper.GetProcessCount("NonExistentProcessName_A9B8C7D6");
-        Assert.Equal(0, count);
+        Assert.False(ProcessHelper.IsProcessRunning(input));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void GetProcessCount_ReturnsZeroForNullOrWhitespace(string? input)
+    {
+        Assert.Equal(0, ProcessHelper.GetProcessCount(input));
     }
 }

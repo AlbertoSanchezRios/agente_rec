@@ -15,8 +15,10 @@ public static class ProcessHelper
     /// Comprueba si existe al menos un proceso con el nombre especificado, liberando
     /// deterministamente todos los objetos Process creados.
     /// </summary>
-    public static bool IsProcessRunning(string processName)
+    public static bool IsProcessRunning(string? processName)
     {
+        if (string.IsNullOrWhiteSpace(processName)) return false;
+
         Process[] processes;
         try
         {
@@ -43,8 +45,10 @@ public static class ProcessHelper
     /// <summary>
     /// Cuenta las instancias en ejecución del proceso especificado, liberando los handles.
     /// </summary>
-    public static int GetProcessCount(string processName)
+    public static int GetProcessCount(string? processName)
     {
+        if (string.IsNullOrWhiteSpace(processName)) return 0;
+
         Process[] processes;
         try
         {

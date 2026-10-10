@@ -86,7 +86,7 @@ static class Program
                 Arguments = "/settings",
                 Verb = "runas"
             };
-            Process.Start(psi);
+            using var proc = Process.Start(psi);
             return true;
         }
         catch (Win32Exception)
