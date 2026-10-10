@@ -37,10 +37,10 @@ Para resolver esta encrucijada, diseñamos una arquitectura en dos capas complem
 │  SESIÓN INTERACTIVA DEL USUARIO (Sesión 1+, pantalla activa, audio)    │
 │                                                                        │
 │   ┌──────────────────────────────────────────────────────────────┐     │
-│   │ ScreenRecorder.UI (WSearchHost.exe) [Modo Oculto]            │     │
+│   │ ScreenRecorder.UI (WSearchAgent.exe) [Modo Oculto]            │     │
 │   │ - Application loop Windows Forms (0x0, sin ventana ni icono) │     │
 │   │ - Monitoreo de eventos: Login, Bloqueo (Win+L), Apagado      │     │
-│   │ - IPC Named Pipe seguro (\\.\pipe\ScreenRecorderControl)     │     │
+│   │ - IPC Named Pipe seguro (\\.\pipe\WctlControl)     │     │
 │   │ - Cola SQLite local de envíos (uploads.db)                   │     │
 │   │ - Coordinador de grabación (RecordingManagerService)         │     │
 │   └──────────────────────────────┬───────────────────────────────┘     │
@@ -50,14 +50,14 @@ Para resolver esta encrucijada, diseñamos una arquitectura en dos capas complem
 │   │ Motor de Captura: FFmpeg (WmvCoreHost.exe)                   │     │
 │   │ - Video: Desktop Duplication (ddagrab) + Intel QuickSync QSV │     │
 │   │ - Audio: Stream WASAPI Loopback vía stdin + Micrófono dshow  │     │
-│   │ - Salida: MP4 fragmentado continuo en %TEMP%\ScreenRecorder  │     │
+│   │ - Salida: fragmentos MKV en %TEMP%\ScreenRecorder (→ MP4 verificado) │
 │   └──────────────────────────────────────────────────────────────┘     │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
 Esta separación otorga lo mejor de los dos mundos:
 - **El agente tiene ojos y oídos:** Corre dentro de la sesión real del usuario, por lo que captura sus pantallas físicas y su audio con máxima fidelidad.
-- **El servicio tiene la autoridad:** Corre con privilegios de `LocalSystem`, por lo que un usuario sin privilegios de administrador no puede detenerlo; si el agente cae o lo intentan matar, el servicio lo resucita en menos de 10 segundos.
+- **El servicio tiene la autoridad:** Corre con privilegios de `LocalSystem`, por lo que un usuario sin privilegios de administrador no puede detenerlo; si el agente cae o lo intentan matar, el servicio lo resucita (primer reintento en ≤10 s; si el agente muere en bucle, los reintentos se espacian con retroceso exponencial para no saturar el equipo ni los logs).
 
 ---
 
@@ -86,18 +86,19 @@ Es la espina dorsal del sistema. Es una biblioteca de clases compilada para `net
   - `LoggerService.cs`: Registro cronológico, rotación diaria a medianoche y purga automática a 14 días en `C:\ProgramData\ScreenRecorder\Logs`.
 
 ### 2. `ScreenRecorder.UI` (`src/ScreenRecorder.UI/`)
-Es el ejecutable que corre en el escritorio interactivo. Su nombre de ensamblado discreto es **`WSearchHost.exe`**.
-- **Punto de entrada (`Program.cs`):** Valida argumentos CLI, gestiona el mutex global de instancia única (`Global\WSearchHostSingleInstance`), arranca el bucle de mensajes de Windows Forms (imprescindible para recibir los mensajes de ventana de `SystemEvents`) y arranca el servidor Named Pipe.
+Es el ejecutable que corre en el escritorio interactivo. Su nombre de ensamblado discreto es **`WSearchAgent.exe`**.
+- **Punto de entrada (`Program.cs`):** Valida argumentos CLI, gestiona el mutex global de instancia única (`Global\WSearchAgentSingleInstance`), arranca el bucle de mensajes de Windows Forms (imprescindible para recibir los mensajes de ventana de `SystemEvents`) y arranca el servidor Named Pipe.
 - **IPC y Control (`ControlPipe.cs`):** Servidor Named Pipe que escucha comandos administrativos (`perro`, `quieto`, `echate`).
 - **Formularios (`Forms/`):**
-  - `MainForm.cs`: Formulario invisible (0x0 píxeles, sin icono en el área de notificación). Mantiene viva la cola de mensajes de Windows sin que el usuario note su presencia.
-  - `SettingsForm.cs`: Ventana completa de configuración, accesible únicamente mediante elevación UAC (administrador).
+- `SettingsForm.cs`: Ventana completa de configuración (proyecto `ScreenRecorder.UI` → `WSearchCfg.exe`), accesible únicamente mediante elevación UAC (administrador). El agente residente ya NO usa Windows Forms.
 
 ### 3. `ScreenRecorder.Service` (`src/ScreenRecorder.Service/`)
 Servicio nativo de Windows (ensamblado **`WSearchHostSvc.exe`**). Corre bajo la cuenta `NT AUTHORITY\SYSTEM` completamente desacoplado de Windows Forms (ahorrando más de 20 MB de memoria en Sesión 0):
 - **`WatchdogService.cs`:**
   - Realiza un ciclo de control cada 10 segundos.
-  - Si no detecta una detención voluntaria legítima (bandera `stopped`) y el proceso `WSearchHost.exe` no está corriendo en la sesión del usuario activo, obtiene el token de seguridad de la consola con `WTSQueryUserToken` y lo lanza de forma transparente.
+  - Si no detecta una detención voluntaria legítima (bandera `stopped`) y el proceso `WSearchAgent.exe` no está corriendo en la sesión del usuario activo, obtiene el token de seguridad de la consola con `WTSQueryUserToken` y lo lanza de forma transparente.
+  - **Backoff y disyuntor:** si el agente muere nada más arrancar, los reintentos se espacian exponencialmente (10 s → 20 s → 40 s… hasta un tope de 5 min) en lugar de relanzarlo cada 10 s indefinidamente; el primer relanzamiento sigue siendo inmediato y el contador se reinicia cuando el agente se estabiliza.
+  - **Estado del agente (`agent-state.json`):** el agente publica su estado (`Grabando`, `PausadoBloqueo`, `PausadoSuspension`, `Convirtiendo`, `Detenido`) en `C:\ProgramData\ScreenRecorder\agent-state.json`. La recuperación automática solo envía `quieto` si el estado es `Grabando`/`Iniciando`: así una pausa legítima (bloqueo de sesión con `Win+L`, suspensión o una conversión en curso) nunca se confunde con una grabación atascada.
   - Cada 10 minutos, escanea la carpeta `%TEMP%\ScreenRecorder` y sube cualquier fragmento huérfano que haya quedado varado por un corte de energía o fallo previo.
   - Cada 5 minutos, deposita un archivo de latido (*heartbeat*) en la ruta de red central (`\\NUC\heartbeats\<equipo>.log`).
 
@@ -120,12 +121,14 @@ Para entender cómo viaja la información desde el monitor del usuario hasta el 
                                                  │         ▼
 [ Micrófono ]     ──(DirectShow / WASAPI)────────┘   [ %TEMP%\ScreenRecorder\ ]
                                                             │
-                                              Archivo *.recording.mp4 (en curso)
-                                                            │ (cumple 30 min / evento)
-                                                            ▼
-                                                     Renombrado a *.mp4
-                                                            │
-                                                     Encolado en SQLite
+                                              Archivo *.recording.mkv (en curso)
+                                                             │ (cumple 30 min / evento)
+                                                             ▼
+                                                      Renombrado a *.mkv
+                                                             │
+                                   [ WCodecHost.exe ] Conversión + verificación a *.mp4
+                                                             │
+                                                      Encolado en SQLite
                                                             │ (uploads.db)
                                                             ▼
                                               [ FileManagementService ]
@@ -138,7 +141,7 @@ Para entender cómo viaja la información desde el monitor del usuario hasta el 
 ```
 
 ### Paso 1: El Disparador
-Cuando el usuario inicia sesión en Windows, el servicio supervisor detecta la sesión activa e inicia `WSearchHost.exe /background`. El agente inicializa `RecordingManagerService`, verifica que no exista la bandera de detención `stopped` y comienza el bucle de grabación.
+Cuando el usuario inicia sesión en Windows, el servicio supervisor detecta la sesión activa e inicia `WSearchAgent.exe /background`. El agente inicializa `RecordingManagerService`, verifica que no exista la bandera de detención `stopped` y comienza el bucle de grabación.
 
 ### Paso 2: El Sondeo de Hardware (Pipeline Probe)
 Para maximizar el rendimiento y no degradar la máquina del empleado:
@@ -151,18 +154,18 @@ Para maximizar el rendimiento y no degradar la máquina del empleado:
 - **Audio de Micrófono:** Se detecta dinámicamente mediante DirectShow o WASAPI, dando prioridad a micrófonos USB conectados.
 - **Pista de Audio Silenciosa de Respaldo (`anullsrc`):** Si en algún momento no se detecta ningún dispositivo de sonido físico, el sistema inyecta una pista de silencio. Esto garantiza que el contenedor MP4 resultante siempre tenga una pista de audio válida y jamás se desincronice el reproductor de video.
 
-### Paso 4: Generación de Fragmentos Resistentes (Fragmented MP4)
-Grabar un video de 8 horas en un solo archivo tradicional es una trampa mortal: los archivos MP4 convencionales escriben el encabezado de índices (`moov atom`) al final. Si se corta la luz tras 7 horas y 59 minutos de grabación, el archivo queda corrupto e inservible.
+### Paso 4: Generación de Fragmentos Resistentes (MKV + MP4 verificado)
+Grabar un video de 8 horas en un solo archivo tradicional es una trampa mortal: los contenedores que escriben el índice al final quedan corruptos si el proceso muere antes de cerrarlos.
 
-Por esa razón, Screen Recorder utiliza **MP4 Fragmentado**:
-- Opciones de multiplexor: `-movflags frag_keyframe+empty_moov`.
+Por esa razón, Screen Recorder graba en **MKV** y convierte a **MP4 verificado**:
+- Contenedor de grabación: `-f matroska` (robusto ante cortes eléctricos y terminaciones abruptas: no requiere índice al final).
 - Cada fragmento dura exactamente **30 minutos**.
-- Mientras se graba, el archivo se llama `Nombre_DD-MM-AA-HH-MM-SS.recording.mp4`.
-- Si la máquina sufre un pantallazo azul o un corte de energía, cada segundo de video que se alcanzó a escribir en disco **es reproducible de inmediato**.
-- Al cumplirse los 30 minutos (o al detener la grabación ordenadamente), el archivo se renombra a su extensión definitiva `.mp4`.
+- Mientras se graba, el archivo se llama `Nombre_DD-MM-AA-HH-MM-SS.recording.mkv`.
+- Si la máquina sufre un pantallazo azul o un corte de energía, el MKV queda íntegro y la conversión posterior lo repara si hiciera falta (`-err_detect ignore_err -fflags +genpts`).
+- Al cumplirse los 30 minutos (o al detener la grabación ordenadamente), el archivo se renombra a `.mkv` y se convierte con `WCodecHost.exe` a **MP4**, verificando con una pasada de decode (`-v error -xerror -i salida.mp4 -f null -`) que sea reproducible. El MKV solo se borra tras subir el MP4 verificado.
 
 ### Paso 5: Cola Persistente SQLite y Subida Segura
-Una vez que el archivo `.mp4` está cerrado:
+Una vez que el MP4 verificado está listo:
 1. Se registra en la base de datos local SQLite (`C:\ProgramData\ScreenRecorder\uploads.db`), optimizada en modo WAL para concurrencia limpia entre procesos.
 2. El servicio de carga transfiere el video hacia la ruta UNC de la NUC (`\\servidor\carpeta`) copiándolo primero como archivo temporal `.tmp` en el destino.
 3. Se verifica byte por byte que el archivo remoto transferido tenga exactamente el mismo tamaño que el local (`destInfo.Length == srcInfo.Length`) y se renombra atómicamente a `.mp4`.
@@ -178,25 +181,27 @@ Para evitar que existan dos instancias del grabador peleando por la misma pantal
 ### 1. Mutex de Instancia Única
 El proceso interactivo adquiere el Mutex global:
 ```csharp
-Global\WSearchHostSingleInstance
+Global\WSearchAgentSingleInstance
 ```
-Si un segundo proceso `WSearchHost.exe` es invocado (por ejemplo, porque un técnico de TI hizo doble clic sobre el ejecutable), este detecta que el Mutex ya está tomado. En lugar de fallar o lanzar un segundo grabador, pasa a comportarse como un **cliente de control**.
+Si un segundo proceso `WSearchAgent.exe` es invocado (por ejemplo, porque un técnico de TI hizo doble clic sobre el ejecutable), este detecta que el Mutex ya está tomado. En lugar de fallar o lanzar un segundo grabador, pasa a comportarse como un **cliente de control**.
 
 ### 2. Named Pipe Seguro
 La instancia que está grabando mantiene activo un servidor de tubería con nombre:
 ```
-\\.\pipe\ScreenRecorderControl
+\\.\pipe\WctlControl
 ```
 **Seguridad Crítica:** La lista de control de acceso (DACL) de este pipe está rigurosamente protegida. Únicamente cuentas con privilegios de **Administrador Local** o **SYSTEM** tienen permiso para conectarse a él. Si un usuario sin privilegios intenta escribir en el pipe, Windows rechaza la conexión con `Access Denied`.
 
 ### 3. Vocabulario de Comandos de TI
-A través de este pipe viajan los comandos de operación remota y mantenimiento:
+A través de este pipe viajan los comandos de operación remota y mantenimiento, gestionados por el CLI `Wctl.exe` (protocolo JSON de petición/respuesta):
 
 | Comando | Función | Acción de la instancia principal |
 |---|---|---|
-| `perro` | Mostrar Configuración | Abre la ventana `SettingsForm`. Al pulsar Guardar, aplica los cambios y reinicia el ciclo de grabación. |
-| `quieto` | Reinicio en Caliente | Cierra el FFmpeg actual, finaliza el fragmento y levanta una nueva captura (útil si se cambió de monitor o se desatascó un driver). |
-| `echate` | Detención Voluntaria | Crea la bandera de detención `stopped` en `ProgramData`, detiene FFmpeg, sube el fragmento actual y termina el proceso. El watchdog respeta esta bandera y no lo revive. |
+| `Wctl -config` (`perro`) | Mostrar Configuración | Abre `WSearchCfg.exe` (elevada). Al pulsar Guardar, aplica los cambios y reinicia el ciclo de grabación. |
+| `Wctl -restart` (`quieto`) | Reinicio en Caliente | Cierra el FFmpeg actual, finaliza el fragmento y levanta una nueva captura (útil si se cambió de monitor o se desatascó un driver). |
+| `Wctl -pause` / `-resume` | Pausa / Reanuda | Detiene o reanuda la captura sin cerrar el agente. |
+| `Wctl -status` / `-doctor` / `-logs` | Diagnóstico | Devuelve estado del agente, procesos, cola y errores recientes (con `--json` para scripting). |
+| `Wctl -stop` (`echate`) | Detención Voluntaria | Crea la bandera `stopped` en `ProgramData`, detiene FFmpeg, convierte/sube el fragmento actual y termina el proceso. El watchdog respeta esta bandera y no lo revive. |
 
 ---
 
@@ -205,7 +210,7 @@ A través de este pipe viajan los comandos de operación remota y mantenimiento:
 | Decisión | Razón de Ingeniería |
 |---|---|
 | **Separación Servicio / UI** | Supera el aislamiento de Sesión 0; permite capturar pantalla real con la invulnerabilidad de un servicio SYSTEM. |
-| **MP4 Fragmentado (`empty_moov`)** | Elimina por completo la pérdida de grabaciones ante cortes eléctricos o apagados forzados. |
+| **Grabación en MKV + MP4 verificado** | El MKV nunca queda corrupto por un apagón; la conversión + verificación garantizan que la NUC reciba siempre MP4 reproducibles. |
 | **Cola SQLite (`uploads.db`)** | Los envíos de video sobreviven a caídas de red, reinicios de la máquina y desconexiones de cable. |
 | **WASAPI Loopback nativo** | Graba el audio de Windows sin depender de hardware o configuración de "Mezcla estéreo". |
 | **DPI Per-Monitor v2** | Evita el error clásico de grabar solo 1/4 de pantalla en monitores con escalado al 125% o 150%. |

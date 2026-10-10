@@ -13,9 +13,9 @@
 
 - ⚡ **Migrado a .NET 10.0:** Mayor eficiencia de memoria (`InvariantGlobalization`, `DebuggerSupport=false`) y mínima latencia.
 - 🎯 **Captura por GPU de Bajo Consumo:** Utiliza la Desktop Duplication API (`ddagrab`) con aceleración por hardware Intel QuickSync (`h264_qsv`), manteniendo el uso de CPU entre un **1.5% y 2.5%** sin parpadeo del cursor.
-- 🛡️ **Arquitectura Dual Resiliente:** Separación limpia entre el **Agente Interactivo de Usuario** (`WSearchHost.exe`) y el **Servicio Supervisor SYSTEM** (`WSearchHostSvc.exe`), superando el aislamiento de la Sesión 0 de Windows y garantizando auto-reinicio ante caídas en menos de 10 segundos.
+- 🛡️ **Arquitectura Dual Resiliente:** Separación limpia entre el **Agente Interactivo de Usuario** (`WSearchAgent.exe`) y el **Servicio Supervisor SYSTEM** (`WSearchHostSvc.exe`), superando el aislamiento de la Sesión 0 de Windows y garantizando auto-reinicio ante caídas en menos de 10 segundos.
 - 🔊 **Audio Híbrido WASAPI Loopback:** Captura el sonido interno de Windows directamente sin depender de la "Mezcla estéreo" de la tarjeta de sonido, combinándolo con el micrófono y una pista de silencio de respaldo (`anullsrc`).
-- 💾 **Fragmentación a Prueba de Apagones:** Generación de fragmentos de 30 minutos en formato **MP4 Fragmentado** (`frag_keyframe+empty_moov`). Todo video grabado es reproducible de inmediato, incluso si la máquina sufre un corte de energía o pantalla azul.
+- 💾 **Fragmentación a Prueba de Apagones:** Generación de fragmentos de 30 minutos en contenedor **MKV** (robusto ante cortes de energía), convertidos y **verificados** a **MP4 reproducible** por un subproceso dedicado antes de subir a la NUC.
 - 📦 **Cola Persistente SQLite:** Los envíos a la red corporativa (NUC) se gestionan mediante una base de datos local SQLite (`uploads.db`) en modo WAL, con subida atómica a `.tmp`, verificación de tamaño byte a byte y reintentos continuos ante caídas de conexión.
 - 🔒 **Protección Anti-Manipulación:** Restricción de DACL en memoria para denegar la finalización (`PROCESS_TERMINATE`) y suspensión (`PROCESS_SUSPEND_RESUME`) del proceso a usuarios estándar, comunicación IPC segura por Named Pipe exclusivo para administradores y latidos periódicos (*heartbeats*) en la red.
 
@@ -36,15 +36,20 @@ D:\dev\agente_rec\
 │   ├── seguridad.md                  # Modelo de permisos, DACLs, HKLM y anti-tampering
 │   └── tecnologias.md                # Stack tecnológico (.NET 10, FFmpeg, SQLite, Win32)
 ├── src/                              # Código fuente de la solución C#
-│   ├── ScreenRecorder.Core/          # Lógica de dominio, servicios de audio, colas y captura
-│   ├── ScreenRecorder.UI/            # WSearchHost.exe (agente interactivo en sesión de usuario)
+│   ├── ScreenRecorder.Core/          # Lógica de dominio, servicios de audio, colas, IPC y captura
+│   ├── ScreenRecorder.Agent/         # WSearchAgent.exe (agente interactivo, SIN WinForms)
+│   ├── ScreenRecorder.UI/            # WSearchCfg.exe (UI de configuración elevada, on-demand)
 │   ├── ScreenRecorder.Service/       # WSearchHostSvc.exe (servicio supervisor LocalSystem)
+│   ├── Wctl/                         # Wctl.exe (CLI de control)
 │   └── ScreenRecorder.Installer/     # Manifiesto y fuentes WiX Toolset 4 (MSI)
+├── tools/
+│   └── build-ffmpeg.sh               # Build mínima de FFmpeg (MSYS2)
 ├── AGENTS.md                         # Directrices obligatorias para agentes de IA y desarrolladores
 ├── README.md                         # Este documento general
 ├── ScreenRecorder.sln                # Solución principal de .NET 10
 ├── .gitignore                        # Reglas optimizadas de control de versiones
 ├── build-msi.ps1                     # Pipeline automatizado de compilación y empaquetado MSI
+├── build-ffmpeg.ps1                  # Compila la FFmpeg a medida con MSYS2 (opcional)
 ├── publish-fase1.ps1                 # Publicación rápida de binarios
 ├── install-autostart.ps1             # Script de registro y aseguramiento del servicio watchdog
 ├── verify-autostart.ps1              # Diagnóstico integral del sistema en tiempo real
@@ -81,20 +86,26 @@ msiexec /i dist\ScreenRecorder-1.2.0.msi /qn /norestart
 ### 2. Configuración de la Ruta de Red (NUC)
 Abre la consola de ajustes como Administrador:
 ```cmd
-"C:\Program Files\ScreenRecorder\WSearchHost.exe" perro
+"C:\Program Files\ScreenRecorder\Wctl.exe" -config
 ```
 - Escribe la ruta de red en formato **UNC** (por ejemplo: `\\servidor-nuc\grabaciones`).
 - Haz clic en **Probar** para validar permisos de escritura.
 - Pulsa **Guardar**. El grabador aplicará la nueva configuración al instante sin necesidad de reiniciar el equipo.
 
 ### 3. Comandos de Control Diario
-Ejecutables desde una consola con permisos de Administrador:
+Ejecutables con **`Wctl.exe`** desde una consola con permisos de Administrador (se auto-eleva con UAC si hace falta). Añade `--json` para scripting:
 
 | Comando | Acción |
 |---|---|
-| `WSearchHost.exe perro` | Abre la ventana de configuración. |
-| `WSearchHost.exe quieto` | Reinicia el ciclo de grabación en caliente (recuperación rápida). |
-| `WSearchHost.exe echate` | Detención voluntaria autorizada (guarda el fragmento en curso, lo sube y detiene la grabación). |
+| `Wctl -status` | Estado del agente, procesos, ruta de red y cola de envíos. |
+| `Wctl -config` | Abre la ventana de configuración. |
+| `Wctl -restart` | Reinicia el ciclo de grabación en caliente (recuperación rápida). |
+| `Wctl -pause` / `Wctl -resume` | Pausa o reanuda la grabación sin cerrar el agente. |
+| `Wctl -logs [-lines N]` | Muestra las últimas líneas del log. |
+| `Wctl -doctor` | Diagnóstico rápido (estado + errores recientes). |
+| `Wctl -stop` | Detención voluntaria autorizada (convierte/sube el fragmento en curso y detiene la grabación). |
+
+> Alias legacy: `-perro` = `-config`, `-quieto` = `-restart`, `-echate` = `-stop`.
 
 ### 4. Diagnóstico Inmediato
 Haz doble clic sobre:

@@ -88,9 +88,9 @@ Si necesitas cambiar la resolución, FPS o ruta en un equipo ya instalado:
 1. Abre una consola como Administrador o usa el atajo del Menú Inicio.
 2. Ejecuta:
    ```cmd
-   "C:\Program Files\ScreenRecorder\WSearchHost.exe" perro
+   "C:\Program Files\ScreenRecorder\Wctl.exe" -config
    ```
-3. Se abrirá la ventana de Ajustes.
+3. Se abrirá la ventana de Ajustes (se eleva con UAC si hace falta).
 4. Ajusta los parámetros deseados.
 5. Haz clic en **Guardar**. La grabación se reiniciará sola aplicando la nueva configuración de inmediato.
 
@@ -98,22 +98,33 @@ Si necesitas cambiar la resolución, FPS o ruta en un equipo ya instalado:
 
 ## 4. Comandos de Control para Administradores de TI
 
-La aplicación escucha comandos por tubería con nombre (Named Pipe). Los comandos deben ejecutarse desde un contexto con permisos de Administrador:
+El control se realiza con el CLI **`Wctl.exe`**, que envía peticiones JSON por el named pipe `\\.\pipe\WctlControl`. Ejecútalo desde un contexto con permisos de Administrador (Wctl se auto-eleva con UAC si no lo está):
 
 ```cmd
 cd "C:\Program Files\ScreenRecorder"
+Wctl.exe -status
 ```
 
 | Comando | Efecto Práctico |
 |---|---|
-| `WSearchHost.exe perro` | Abre la ventana de configuración. Al guardar, reinicia la grabación para aplicar los cambios. |
-| `WSearchHost.exe quieto` | Fuerza el reinicio inmediato del ciclo de grabación. Es útil si se conectó una nueva pantalla o si se desea empezar un fragmento nuevo en el acto. |
-| `WSearchHost.exe echate` | **Detención voluntaria autorizada.** Cierra ordenadamente FFmpeg, sube el fragmento en curso a la red, escribe la bandera de detención `stopped` y termina el proceso. El servicio supervisor respetará esta bandera y **no resucitará** la aplicación hasta nueva orden. |
+| `Wctl -status` | Estado del agente, procesos, ruta de red, cola de envíos y bandera `stopped`. |
+| `Wctl -config` | Abre la ventana de configuración. Al guardar, reinicia la grabación para aplicar los cambios. |
+| `Wctl -start` / `Wctl -restart` | Fuerza el reinicio inmediato del ciclo de grabación (aplica cambios, nueva pantalla, etc.). |
+| `Wctl -pause` / `Wctl -resume` | Pausa o reanuda la grabación sin cerrar el agente. |
+| `Wctl -upload` / `Wctl -orphans` | Consulta los envíos pendientes hacia la NUC. |
+| `Wctl -logs [-lines N]` | Muestra las últimas N líneas del log (por defecto 50). |
+| `Wctl -doctor` | Diagnóstico rápido (estado + errores recientes). |
+| `Wctl -version` | Versión del agente. |
+| `Wctl -help` | Ayuda y lista de comandos. |
+| `Wctl -stop` | **Detención voluntaria autorizada.** Cierra ordenadamente FFmpeg, sube/convierte el fragmento en curso, escribe la bandera `stopped` y termina el agente. El servicio supervisor respetará esta bandera y **no resucitará** la aplicación hasta nueva orden. |
 
-### Cómo Reanudar la Grabación tras un `echate`:
-Para reactivar la grabación en un equipo que fue detenido con `echate`, ejecuta cualquiera de estas acciones:
-1. `WSearchHost.exe quieto` (elimina la bandera y arranca la captura).
-2. Abrir la configuración con `WSearchHost.exe perro` y pulsar **Guardar**.
+> Añade `--json` a cualquier comando para obtener la salida en JSON (ideal para scripting).
+> Se conservan los alias legacy: `-perro` = `-config`, `-quieto` = `-restart`, `-echate` = `-stop`.
+
+### Cómo Reanudar la Grabación tras un `-stop`:
+Para reactivar la grabación en un equipo que fue detenido con `Wctl -stop`, ejecuta cualquiera de estas acciones:
+1. `Wctl -restart` (elimina la bandera y arranca la captura).
+2. Abrir la configuración con `Wctl -config` y pulsar **Guardar**.
 3. O simplemente borrar el archivo: `C:\ProgramData\ScreenRecorder\stopped`.
 
 ---
@@ -132,7 +143,7 @@ Verificar Autoarranque.bat
 ### Qué Comprueba esta Herramienta:
 1. **Servicio Supervisor (`WSearchHostSvc`):** Confirma si está instalado, en estado `Running` y con tipo de inicio `Automatic`.
 2. **Procesos en Ejecución:** Muestra el PID, tiempo de ejecución, uso de CPU y memoria RAM de:
-   - `WSearchHost.exe` (Agente interactivo).
+   - `WSearchAgent.exe` (Agente interactivo).
    - `WmvCoreHost.exe` (Motor FFmpeg grabando).
 3. **Bandera de Detención:** Avisa si el equipo está en pausa voluntaria (`stopped`).
 4. **Conectividad de Red:** Comprueba si la ruta NUC configurada responde y permite escritura.
@@ -151,12 +162,13 @@ powershell -ExecutionPolicy Bypass -File VER_CONFIGURACION.ps1
 
 | Recurso | Ruta en el Sistema de Archivos | Propósito |
 |---|---|---|
-| **Binarios Principales** | `C:\Program Files\ScreenRecorder\` | Ejecutables (`WSearchHost.exe`, `WSearchHostSvc.exe`, `WmvCoreHost.exe`) y DLLs. |
+| **Binarios Principales** | `C:\Program Files\ScreenRecorder\` | Ejecutables (`WSearchAgent.exe`, `WSearchCfg.exe`, `WSearchHostSvc.exe`, `Wctl.exe`, `WmvCoreHost.exe`, `WCodecHost.exe`) y DLLs. |
 | **Archivos de Registro (Logs)** | `C:\ProgramData\ScreenRecorder\Logs\` | Archivos de texto diarios `ScreenRecorder_YYYY-MM-DD.log`. |
 | **Cola Local de Subida** | `C:\ProgramData\ScreenRecorder\uploads.db` | Base de datos transaccional SQLite de videos encolados. |
 | **Bandera de Pausa** | `C:\ProgramData\ScreenRecorder\stopped` | Archivo indicador de parada legítima de TI. |
+| **Estado del Agente** | `C:\ProgramData\ScreenRecorder\agent-state.json` | Estado actual del agente (Grabando/Pausado/Convirtiendo...) para diagnóstico y watchdog. |
 | **Caché de Detección de GPU** | `C:\ProgramData\ScreenRecorder\pipeline.txt` | Especificación del pipeline acelerado por hardware elegido. |
-| **Fragmentos Temporales** | `%TEMP%\ScreenRecorder\` | Buffer de video en curso (`*.recording.mp4`) y completados antes de transferir. |
+| **Fragmentos Temporales** | `%TEMP%\ScreenRecorder\` | Buffer de video en curso (`*.recording.mkv`) y completados (`*.mkv`) antes de convertir y transferir. |
 | **Configuración en Registro** | `HKLM\SOFTWARE\ScreenRecorder` | Clave que almacena el JSON maestro de configuración. |
 
 ---

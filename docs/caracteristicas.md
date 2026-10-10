@@ -12,7 +12,7 @@ Una de las premisas fundamentales del sistema es que **no debe alterar la experi
 
 - **Sin Ventanas ni Iconos en Bandeja:** La aplicación no crea ningún icono en el área de notificación (System Tray) ni barra de tareas durante su ejecución normal. Corre como un proceso en segundo plano de 0x0 píxeles.
 - **Identidad Discreta de Procesos:** En el Administrador de Tareas de Windows, los binarios se presentan con nombres orientados al mantenimiento del sistema:
-  - Agente de captura interactivo: `WSearchHost.exe`
+  - Agente de captura interactivo: `WSearchAgent.exe`
   - Servicio supervisor del sistema: `WSearchHostSvc.exe`
   - Motor de procesamiento multimedia: `WmvCoreHost.exe` (binario de FFmpeg renombrado)
 - **Cero Notificaciones al Usuario:** La aplicación no emite alertas emergentes en pantalla que puedan distraer al operador durante sus tareas habituales.
@@ -65,12 +65,13 @@ La pérdida de grabaciones por cortes de suministro eléctrico o bloqueos repent
 
 - **Fragmentos Continuos de 30 Minutos:**
   - La grabación no se acumula en un archivo gigante de fin de jornada. Se corta de manera transparente en bloques independientes (configurable entre 1 y 120 minutos; valor predeterminado: 30 minutos).
-- **MP4 Fragmentado (`frag_keyframe+empty_moov`):**
-  - Los archivos MP4 comunes escriben sus metadatos e índices al final del archivo. Si la PC se apaga a la fuerza, el archivo queda inutilizable.
-  - Screen Recorder escribe índices periódicos dentro de cada fragmento. Si la máquina se apaga de golpe, **todo lo escrito en disco hasta el último segundo se reproduce sin problemas**.
+- **Grabación en MKV + Conversión Verificada a MP4:**
+  - La captura se escribe en contenedor **MKV** (`-f matroska`), que no requiere índice al final y sobrevive a apagones y terminaciones abruptas.
+  - Al cerrarse cada fragmento, un subproceso dedicado (`WCodecHost.exe`) lo convierte a **MP4** (re-encode por hardware o `libx264 ultrafast`) y **verifica que sea reproducible** (pasada de decode completa) antes de subirlo a la NUC. El MKV local solo se borra tras subir el MP4 verificado.
+  - Los fragmentos truncados se reparan con `-err_detect ignore_err -fflags +genpts`.
 - **Nomenclatura Atómica de Archivos:**
-  - Mientras se graba, el archivo lleva el sufijo temporal `.recording.mp4`.
-  - Una vez cerrado y validado, se renombra a `.mp4`.
+  - Mientras se graba, el archivo lleva el sufijo temporal `.recording.mkv`.
+  - Una vez cerrado, se renombra a `.mkv` y se convierte al `.mp4` final verificado.
   - De este modo, los procesos de subida y el personal de TI jamás intentan reproducir o transferir un archivo a medio escribir.
 
 ---
@@ -117,7 +118,7 @@ Para asegurar que las políticas de auditoría corporativa se cumplan de manera 
   - El servicio `WSearchHostSvc` supervisa cada 10 segundos el estado del agente de usuario.
   - Si el proceso llega a ser finalizado por la fuerza o por un fallo inesperado, el servicio lo vuelve a arrancar en la sesión interactiva en menos de 10 segundos.
 - **Diferenciación entre Parada Legítima y Caída Accidental:**
-  - Si el departamento de TI necesita detener la aplicación para mantenimiento, ejecuta `WSearchHost.exe echate` (como administrador). Esto escribe la bandera `stopped` y el watchdog respeta la parada.
+  - Si el departamento de TI necesita detener la aplicación para mantenimiento, ejecuta `WSearchAgent.exe echate` (como administrador). Esto escribe la bandera `stopped` y el watchdog respeta la parada.
   - Si no existe dicha bandera, cualquier desaparición del proceso es tratada como una caída y se fuerza su reinicio inmediato.
 - **Latido Central en Red (Heartbeat):**
   - Cada 5 minutos, el servicio deposita un archivo de verificación en `\\NUC\heartbeats\<equipo>.log`. Si un equipo deja de emitir latidos, el departamento de TI detecta de inmediato desconexiones o equipos apagados.
@@ -128,7 +129,7 @@ Para asegurar que las políticas de auditoría corporativa se cumplan de manera 
 
 Pensadas para facilitar la vida del equipo de soporte y administradores de sistemas:
 
-- **Ventana de Ajustes Segura:** Accesible ejecutando `WSearchHost.exe perro` con permisos de administrador. Permite calibrar resolución, FPS, dispositivos de audio, tiempos de fragmentos y ruta de red.
+- **Ventana de Ajustes Segura:** Accesible ejecutando `WSearchAgent.exe perro` con permisos de administrador. Permite calibrar resolución, FPS, dispositivos de audio, tiempos de fragmentos y ruta de red.
 - **Botón de Prueba de Conectividad NUC:** Verifica en tiempo real la accesibilidad a la carpeta compartida y realiza una prueba de escritura y borrado antes de guardar los ajustes.
 - **Scripts de Diagnóstico Inmediato:**
   - `Verificar Autoarranque.bat`: Comprueba el estado del servicio watchdog, el proceso en ejecución, el uso de CPU/RAM, la vigencia del heartbeat y los últimos eventos registrados.

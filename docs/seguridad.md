@@ -17,7 +17,7 @@ El sistema opera bajo una estricta jerarquía de privilegios de Windows basada e
 ├────────────────────────────────────────────────────────────────────────┤
 │ NIVEL 2: ADMINISTRADORES LOCALES (TI / Soporte Autorizado)             │
 │ - Capacidad de modificar ajustes en HKLM\SOFTWARE\ScreenRecorder.      │
-│ - Conexión permitida a la tubería IPC (\\.\pipe\ScreenRecorderControl).│
+│ - Conexión permitida a la tubería IPC (\\.\pipe\WctlControl).│
 │ - Capacidad de enviar órdenes de detención voluntaria ('echate').      │
 ├────────────────────────────────────────────────────────────────────────┤
 │ NIVEL 3: USUARIOS ESTÁNDAR (Operadores / Empleados Auditados)          │
@@ -37,7 +37,7 @@ Un problema común en el software de auditoría es que un usuario experimentado 
 Screen Recorder aborda este reto mediante dos capas de protección complementarias:
 
 ### Capa 1: Restricción de DACL en Memoria (`ProcessProtection.cs`)
-Al arrancar tanto el agente de usuario (`WSearchHost.exe`) como el motor de captura (`WmvCoreHost.exe`), el sistema ejecuta una modificación de los descriptores de seguridad (DACL) del proceso:
+Al arrancar tanto el agente de usuario (`WSearchAgent.exe`) como el motor de captura (`WmvCoreHost.exe`), el sistema ejecuta una modificación de los descriptores de seguridad (DACL) del proceso:
 - Identifica el token de seguridad del grupo local **Usuarios** (`BuiltinUsersSid`).
 - Agrega una entrada de control de acceso explícita de **DENEGACIÓN (Access Denied)** para los siguientes derechos Win32:
   - `PROCESS_TERMINATE` (0x0001): Prohíbe terminar el proceso.
@@ -52,7 +52,8 @@ Un usuario que posee privilegios de administrador completo cuenta con el privile
 Para este escenario, la defensa es el **Servicio Supervisor `WSearchHostSvc`**:
 - El servicio corre como `LocalSystem`.
 - Monitorea cada 10 segundos la existencia del agente.
-- Si el proceso desaparece sin una orden legítima de parada (la bandera `stopped`), el servicio lo **resucita en menos de 10 segundos** en la sesión activa mediante `WTSQueryUserToken` y `CreateProcessAsUser`.
+- Si el proceso desaparece sin una orden legítima de parada (la bandera `stopped`), el servicio lo **relanza en la sesión activa** mediante `WTSQueryUserToken` y `CreateProcessAsUser` (primer reintento en ≤10 s). Si el agente muere en bucle, los reintentos se **espacian exponencialmente** (hasta 5 min) para no saturar el equipo, y el estado queda registrado.
+- El agente publica su estado en `agent-state.json`; el watchdog no confunde una pausa legítima (bloqueo de sesión, suspensión, conversión) con una caída.
 - Además, el intento queda registrado cronológicamente en los logs forenses.
 
 ### Evidencia de Manipulación (Tamper-Evidence):
@@ -64,7 +65,7 @@ Si alguien llegara a desenchufar el cable de red o apagar el servicio supervisor
 
 ## 3. Seguridad en la Comunicación Inter-Procesos (IPC)
 
-La tubería con nombre (Named Pipe) `\\.\pipe\ScreenRecorderControl` es la única vía para interactuar con el grabador mientras está en ejecución. Para evitar que un usuario no autorizado envíe órdenes falsas:
+La tubería con nombre (Named Pipe) `\\.\pipe\WctlControl` es la única vía para interactuar con el grabador mientras está en ejecución. Para evitar que un usuario no autorizado envíe órdenes falsas:
 
 1. **Lista de Acceso Restringida:**  
    El pipe se inicializa mediante la API de seguridad de .NET con un `PipeSecurity` restrictivo:
@@ -79,7 +80,7 @@ La tubería con nombre (Named Pipe) `\\.\pipe\ScreenRecorderControl` es la únic
        PipeAccessRights.ReadWrite, AccessControlType.Allow));
    ```
 2. **Rechazo de Comandos:**  
-   Si un usuario estándar intenta escribir un comando `echate` hacia el pipe para detener la grabación, la conexión es abortada a nivel de kernel por Windows.
+   Si un usuario estándar intenta escribir un comando `stop` hacia el pipe para detener la grabación, la conexión es abortada a nivel de kernel por Windows.
 
 ---
 

@@ -10,13 +10,14 @@ Antes de profundizar en logs extensos, consulta esta tabla con las causas más h
 
 | Síntoma Observado | Causa Frecuente | Solución Aplicada |
 |---|---|---|
-| **La aplicación no inicia ni graba.** | Existe la bandera de parada voluntaria `stopped`. | Ejecuta `WSearchHost.exe quieto` o elimina el archivo `C:\ProgramData\ScreenRecorder\stopped`. |
+| **La aplicación no inicia ni graba.** | Existe la bandera de parada voluntaria `stopped`. | Ejecuta `WSearchAgent.exe quieto` o elimina el archivo `C:\ProgramData\ScreenRecorder\stopped`. |
 | **El servicio no revive al agente.** | El servicio `WSearchHostSvc` está detenido o deshabilitado en Windows. | Abre `services.msc`, localiza `WSearchHostSvc` y asegúrate de que esté en ejecución y en inicio Automático. |
 | **FFmpeg inicia pero se cierra a los 2-3 segundos.** | Conflicto en el dispositivo de audio seleccionado o fallo en el driver de video. | Revisa el archivo de log. Si el problema es audio, activa "Detección automática de audio" en Ajustes. Si es video, cambia el modo de captura a GDI. |
 | **Los videos se quedan en local y no llegan a la NUC.** | La ruta configurada usa una letra de unidad (p. ej. `Z:\`) o el recurso SMB no tiene permisos de escritura. | Configura una ruta UNC (`\\servidor\carpeta`) y verifica que la cuenta de la máquina tenga permisos de modificación en la carpeta compartida. |
-| **El cursor del ratón parpadea al abrir Chrome o Excel.** | Interferencia de la aceleración por hardware de GPUs integradas Intel con DXGI Desktop Duplication. | En Ajustes (`WSearchHost.exe perro`), cambia el **Modo de Captura a GDI** o actualiza el controlador de gráficos Intel a la versión más reciente. |
+| **El cursor del ratón parpadea al abrir Chrome o Excel.** | Interferencia de la aceleración por hardware de GPUs integradas Intel con DXGI Desktop Duplication. | En Ajustes (`WSearchAgent.exe perro`), cambia el **Modo de Captura a GDI** o actualiza el controlador de gráficos Intel a la versión más reciente. |
 | **El video grabado se reproduce pero no tiene sonido.** | Ningún dispositivo de audio generó sonido y no había micrófono conectado. | Normal si no hubo actividad sonora. Comprueba que WASAPI loopback y el micrófono estén habilitados en Ajustes. |
-| **El Administrador de Tareas muestra varios procesos `WmvCoreHost.exe`.** | Quedó un proceso huérfano de una sesión anterior tras un cierre abrupto. | Ejecuta `WSearchHost.exe echate`, mata los procesos sobrantes y reanuda con `WSearchHost.exe quieto`. |
+| **El Administrador de Tareas muestra varios procesos `WmvCoreHost.exe`.** | Quedó un proceso huérfano de una sesión anterior tras un cierre abrupto. | Ejecuta `WSearchAgent.exe echate`, mata los procesos sobrantes y reanuda con `WSearchAgent.exe quieto`. |
+| **El agente se reinicia en bucle o no graba pese a estar el proceso vivo.** | El agente muere nada más arrancar (fallo de inicialización) o está en una pausa legítima (sesión bloqueada, suspensión, conversión). | Consulta `agent-state.json` (campo `estado`) y el log. El watchdog espacia los reintentos automáticamente (10 s → … → 5 min) para no saturar el equipo; no intervengas salvo que el estado quede en `Detenido` sin haber ejecutado `echate`. |
 
 ---
 
@@ -50,6 +51,21 @@ Get-Content (Get-Item "C:\ProgramData\ScreenRecorder\Logs\ScreenRecorder_*.log" 
 - `FFmpeg murió justo después del arranque. Código: 1:`  
   FFmpeg rechazó los argumentos de entrada. Las líneas inmediatamente anteriores en el log mostrarán la salida de error estándar (`stderr`) detallando si falló un filtro, un codec o un dispositivo.
 
+### Estado en Vivo del Agente (`agent-state.json`)
+
+El agente publica su estado en `C:\ProgramData\ScreenRecorder\agent-state.json` para que el watchdog no confunda una pausa legítima con un atasco y para diagnóstico rápido:
+
+```powershell
+Get-Content "C:\ProgramData\ScreenRecorder\agent-state.json"
+```
+
+Interpretación del campo `estado`:
+- `Grabando`: situación normal.
+- `PausadoBloqueo`: sesión bloqueada (`Win+L`); no se graba por diseño.
+- `PausadoSuspension`: el equipo está dormido; no se graba mientras duerme.
+- `Convirtiendo`: hay un fragmento en proceso de conversión/verificación.
+- `Detenido`: parada ordenada (`echate`/apagado) o tras fallos. Si aparece sin haber ejecutado `echate`, revisa el log y confirma que el binario del agente no esté crasheando al arrancar.
+
 ---
 
 ## 3. Mantenimiento de la Base de Datos SQLite (`uploads.db`)
@@ -62,7 +78,7 @@ La cola de envíos reside en `C:\ProgramData\ScreenRecorder\uploads.db`, operand
 Si sospechas que la base de datos se corrompió debido a un apagón severo:
 1. Detén el grabador:
    ```cmd
-   "C:\Program Files\ScreenRecorder\WSearchHost.exe" echate
+   "C:\Program Files\ScreenRecorder\WSearchAgent.exe" echate
    net stop WSearchHostSvc
    ```
 2. Elimina los archivos de base de datos:
@@ -72,7 +88,7 @@ Si sospechas que la base de datos se corrompió debido a un apagón severo:
 3. Vuelve a iniciar el servicio:
    ```cmd
    net start WSearchHostSvc
-   "C:\Program Files\ScreenRecorder\WSearchHost.exe" quieto
+   "C:\Program Files\ScreenRecorder\WSearchAgent.exe" quieto
    ```
 4. El sistema creará un archivo `uploads.db` nuevo y el escáner de huérfanos re-descubrirá automáticamente cualquier video pendiente en disco.
 
@@ -82,8 +98,8 @@ Si sospechas que la base de datos se corrompió debido a un apagón severo:
 
 ### ¿Dónde se Guardan los Fragmentos?
 Los fragmentos se almacenan en `%TEMP%\ScreenRecorder`.
-- Los archivos en curso llevan la extensión `*.recording.mp4`.
-- Los archivos terminados llevan la extensión `*.mp4`.
+- Los archivos en curso llevan la extensión `*.recording.mkv`.
+- Los archivos terminados llevan la extensión `*.mkv` y se convierten a `*.mp4` verificado antes de subir.
 
 ### Limpieza Automática:
 El sistema está diseñado para mantener el disco limpio:
@@ -94,7 +110,7 @@ El sistema está diseñado para mantener el disco limpio:
 Si un equipo estuvo semanas sin conexión de red o con la ruta NUC caída, es posible que la carpeta `%TEMP%\ScreenRecorder` contenga varios gigabytes acumulados:
 1. Restablece la conectividad hacia la ruta NUC.
 2. El sistema comenzará a subir los fragmentos en segundo plano de forma progresiva.
-3. Puedes acelerar el proceso ejecutando `WSearchHost.exe quieto`.
+3. Puedes acelerar el proceso ejecutando `WSearchAgent.exe quieto`.
 
 ---
 

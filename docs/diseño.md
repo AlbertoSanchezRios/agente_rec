@@ -17,7 +17,7 @@ Durante el desarrollo de Screen Recorder se establecieron cuatro principios rect
 
 ## 2. Optimización de Memoria y Rendimiento en .NET 10
 
-Dado que tanto el agente interactivo (`WSearchHost.exe`) como el servicio de supervisión (`WSearchHostSvc.exe`) corren continuamente, el consumo de memoria RAM era una métrica crítica. En los archivos de proyecto `.csproj` se implementaron directivas de recorte que reducen sustancialmente la huella en memoria:
+Dado que tanto el agente interactivo (`WSearchAgent.exe`) como el servicio de supervisión (`WSearchHostSvc.exe`) corren continuamente, el consumo de memoria RAM era una métrica crítica. En los archivos de proyecto `.csproj` se implementaron directivas de recorte que reducen sustancialmente la huella en memoria:
 
 ```xml
 <!-- Recorte de memoria: sin tablas ICU ni anclaje de depurador -->
@@ -37,23 +37,23 @@ Dado que tanto el agente interactivo (`WSearchHost.exe`) como el servicio de sup
 
 ---
 
-## 3. El Bucle de Mensajes Oculto (Windows Forms Silencioso)
+## 3. El Bucle de Mensajes Oculto (sin Windows Forms)
 
 Una pregunta habitual para un desarrollador que revisa el repositorio es:  
-*“Si la aplicación no muestra ninguna ventana en pantalla, ¿por qué el proyecto UI referencia Windows Forms y ejecuta `Application.Run()`?”*
+*"Si el agente no muestra ninguna ventana, ¿cómo recibe los eventos de bloqueo (`Win+L`) y apagado?"*
 
 ### La Razón Técnica: Despacho de Eventos de Windows
-El servicio necesita reaccionar inmediatamente cuando el usuario bloquea el equipo (`Win + L`), cierra sesión o apaga la máquina. En el ecosistema de Windows, estos eventos son notificados por el sistema operativo mediante mensajes de ventana Win32 (`WM_WTSSESSION_CHANGE`, `WM_QUERYENDSESSION`, `WM_ENDSESSION`).
+El agente necesita reaccionar inmediatamente cuando el usuario bloquea el equipo (`Win + L`), cierra sesión o apaga la máquina. Estos eventos los notifica Windows mediante mensajes de ventana Win32 (`WM_WTSSESSION_CHANGE`, `WM_QUERYENDSESSION`, `WM_ENDSESSION`).
 
-La clase de .NET `Microsoft.Win32.SystemEvents` **requiere obligatoriamente una cola de mensajes activa** (un hilo STA con un *message pump*). Si se hubiera implementado como una simple aplicación de consola en bucle (`while(true)`), los eventos de bloqueo y apagado no se recibirían a tiempo o fallarían.
+La clase de .NET `Microsoft.Win32.SystemEvents` **levanta su propia ventana oculta y su propio hilo con bomba de mensajes** de forma interna. Por eso el agente **no necesita Windows Forms ni `Application.Run()`**: basta con suscribirse a `SystemEvents` y mantener vivo el proceso.
 
 ### La Solución Implementada:
-`MainForm.cs` se crea con dimensiones de 0x0 píxeles, visibilidad desactivada y sin asociar ningún icono en la bandeja del sistema (`NotifyIcon`). De este modo:
-- Se mantiene vivo el hilo de mensajes que alimenta a `SystemEvents`.
+`WSearchAgent.exe` no referencia Windows Forms. Se suscribe a `SystemEvents` y bloquea el hilo principal con un `WaitHandle`; la bomba de mensajes de `SystemEvents` corre en su propio hilo dedicado. De este modo:
+- Se reciben los eventos de sesión y energía sin ninguna ventana.
 - La aplicación consume prácticamente 0% de CPU en reposo.
 - Para el usuario es completamente indetectable.
 
-> **Desacoplamiento Estricto de Sesión 0:** Windows Forms se utiliza **únicamente** en `ScreenRecorder.UI` para mantener este hilo STA de mensajes (`MainForm.cs`) y la ventana de configuración (`SettingsForm.cs`). Los proyectos `ScreenRecorder.Core` y `ScreenRecorder.Service` no tienen ninguna referencia a Windows Forms (`<UseWindowsForms>` fue completamente removido), garantizando que el servicio supervisor en Sesión 0 (`WSearchHostSvc.exe`) corra sin librerías de UI innecesarias, ahorrando ~22 MB de memoria en runtime.
+> **Desacoplamiento Estricto:** Ninguno de los componentes residentes (`ScreenRecorder.Core`, `ScreenRecorder.Service`, `ScreenRecorder.Agent`, `Wctl`) referencia Windows Forms. Solo `WSearchCfg.exe` (UI de configuración, on-demand y elevada) usa WinForms, de modo que la UI pesada nunca carga en el proceso de grabación ni en el servicio de Sesión 0.
 
 ---
 
@@ -64,22 +64,21 @@ La aplicación debe permitir que un administrador de TI que se conecta a la máq
 ```
 [ Administrador / Script de TI ]
               │
-              │  Ejecuta: WSearchHost.exe perro (elevado con UAC)
+              │  Ejecuta: Wctl -config  (se auto-eleva con UAC)
               ▼
-[ Instancia Cliente Efímera ]
-              │  1. Comprueba si Global\WSearchHostSingleInstance está ocupado.
-              │  2. Se conecta al Named Pipe local.
-              │  3. Envía el comando en texto plano.
+[ Wctl.exe ]
+              │  1. Se conecta al Named Pipe local.
+              │  2. Envía una petición JSON (p. ej. {"cmd":"config"}).
               ▼
     ╔══════════════════════════════════════════════════════╗
-    ║ Named Pipe: \\.\pipe\ScreenRecorderControl           ║
+    ║ Named Pipe: \\.\pipe\WctlControl                     ║
     ║ DACL: Solo administradores locales y cuenta SYSTEM   ║
     ╚══════════════════════════════════════════════════════╝
               ▲
-              │  Recibe: "perro"
+              │  Recibe: {"cmd":"config"}
               │
-[ Instancia Principal de Grabación ]
-              │  Abre SettingsForm en la sesión activa.
+[ WSearchAgent.exe (instancia principal, sin WinForms) ]
+              │  Lanza WSearchCfg.exe (elevado) en la sesión activa.
 ```
 
 ### Protección contra Manipulación en el Named Pipe

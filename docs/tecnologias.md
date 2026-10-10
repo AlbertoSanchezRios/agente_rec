@@ -19,8 +19,8 @@ El núcleo de la solución ha sido actualizado a la versión más moderna y efic
 
 ## 2. Motor de Procesamiento Multimedia
 
-### **FFmpeg (Distribuido bajo la identidad discreta `WmvCoreHost.exe`)**
-El motor de captura, filtrado y compresión de video es una compilación optimizada **FFmpeg Essentials** de 64 bits para Windows (~105 MB, reduciendo más de 115 MB de huella frente a compilaciones completas):
+### **FFmpeg (Distribuido bajo la identidad discreta `WmvCoreHost.exe` y `WCodecHost.exe`)**
+El motor de captura, filtrado y compresión de video es una **build mínima a medida** (script `tools/build-ffmpeg.sh` / `build-ffmpeg.ps1`, MSYS2) de ~20-35 MB con SOLO lo que usa el software. Si no está disponible, `build-msi.ps1` descarga el **FFmpeg Essentials** oficial (~95 MB) como respaldo. Hay dos copias del binario con identidad distinta: `WmvCoreHost.exe` (captura) y `WCodecHost.exe` (conversión/verificación MKV→MP4).
 
 #### Encoders y Módulos de Captura Utilizados:
 1. **Captura de Pantalla DXGI (`ddagrab`):**
@@ -29,16 +29,16 @@ El motor de captura, filtrado y compresión de video es una compilación optimiz
    - Elimina la necesidad de operaciones GDI lentas (`BitBlt`) y erradica el parpadeo del cursor.
 2. **Aceleración por Hardware Intel QuickSync (`h264_qsv`):**
    - Utiliza el silicio dedicado de las CPUs Intel para codificar video H.264 en tiempo real.
-   - Registra un consumo mínimo de CPU (~1.5% a 2%).
+   - En iGPU Intel modestas (6ª-7ª gen) se prefiere el **escalado en GPU** (`scale_qsv`) para no cargar la CPU.
 3. **Aceleración por Hardware NVIDIA NVENC (`h264_nvenc`) y AMD AMF (`h264_amf`):**
    - Soporte automático para tarjetas gráficas dedicadas NVIDIA y AMD.
 4. **Encoder por Software de Respaldo (`libx264`):**
-   - Preset `ultrafast`, `crf 28`. Proporciona un plan B ultraestable para computadoras sin GPU compatible o en entornos virtualizados (RDP / VDI).
+   - Preset `ultrafast`, `crf 23`. Proporciona un plan B ultraestable para computadoras sin GPU compatible o en entornos virtualizados (RDP / VDI).
 5. **Captura por Software de Respaldo (`gdigrab`):**
    - Respaldo para escenarios multimonitor combinados o donde DXGI no está disponible.
-6. **Multiplexor de Archivos MP4 Fragmentados (`-movflags frag_keyframe+empty_moov`):**
-   - Escribe átomos de índice periódicos en el archivo MP4.
-   - Garantiza que los videos no se corrompan ante apagados bruscos o fallos de corriente.
+6. **Grabación en MKV + conversión verificada a MP4:**
+   - La captura se escribe en **MKV** (`-f matroska`), robusto ante cortes eléctricos y terminaciones abruptas.
+   - `WCodecHost.exe` convierte cada fragmento a MP4 (re-encode por hardware o `libx264 ultrafast`) y **verifica su reproducibilidad** (pasada de decode `-v error -xerror -i salida.mp4 -f null -`) antes de subirlo. El MKV solo se borra tras subir el MP4 verificado.
 
 ---
 
