@@ -11,21 +11,25 @@ namespace ScreenRecorder.Core.Services;
 /// </summary>
 public class SettingsService : ISettingsService
 {
-    private const string RegistryKey = @"SOFTWARE\ScreenRecorder";
+    private const string DefaultRegistryKey = @"SOFTWARE\ScreenRecorder";
     private const string SettingsValueName = "Settings";
     private readonly ILoggerService _logger;
+    private readonly string _registryKey;
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
-    public SettingsService(ILoggerService logger)
+    /// <param name="logger">Logger.</param>
+    /// <param name="registryKey">Clave de registro a usar (para pruebas, permite una clave aislada).</param>
+    public SettingsService(ILoggerService logger, string? registryKey = null)
     {
         _logger = logger;
+        _registryKey = string.IsNullOrWhiteSpace(registryKey) ? DefaultRegistryKey : registryKey;
     }
 
     public RecordingSettings LoadSettings()
     {
         try
         {
-            using var key = Registry.LocalMachine.OpenSubKey(RegistryKey);
+            using var key = Registry.LocalMachine.OpenSubKey(_registryKey);
             if (key != null)
             {
                 var settingsJson = key.GetValue(SettingsValueName) as string;
@@ -54,7 +58,7 @@ public class SettingsService : ISettingsService
     {
         try
         {
-            using var key = Registry.LocalMachine.CreateSubKey(RegistryKey, true);
+            using var key = Registry.LocalMachine.CreateSubKey(_registryKey, true);
             if (key != null)
             {
                 var settingsJson = JsonSerializer.Serialize(settings, JsonOptions);

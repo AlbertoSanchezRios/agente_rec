@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using Microsoft.Win32;
 using ScreenRecorder.Core.Models;
 using ScreenRecorder.Core.Services;
 using Xunit;
@@ -134,7 +135,9 @@ public class CoreTests
     public async System.Threading.Tasks.Task FileManagementService_AtomicUploadAndSingleFlight_Works()
     {
         var logger = new LoggerService();
-        var settingsService = new SettingsService(logger);
+        // Clave de registro AISLADA: la prueba no debe sobrescribir el NetworkPath real del equipo.
+        var regKey = $@"SOFTWARE\ScreenRecorderTest_{Guid.NewGuid():N}";
+        var settingsService = new SettingsService(logger, regKey);
         var targetDir = Path.Combine(Path.GetTempPath(), $"test_dest_{Guid.NewGuid():N}");
         Directory.CreateDirectory(targetDir);
 
@@ -163,6 +166,7 @@ public class CoreTests
         {
             if (File.Exists(testFile)) File.Delete(testFile);
             if (Directory.Exists(targetDir)) Directory.Delete(targetDir, recursive: true);
+            try { Registry.LocalMachine.DeleteSubKeyTree(regKey, throwOnMissingSubKey: false); } catch { }
         }
     }
 
