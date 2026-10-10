@@ -659,20 +659,44 @@
   <Component Id="C_Gen_System_Xml_XPath_XDocument_dll" Guid="*">
     <File Id="Gen_System_Xml_XPath_XDocument_dll" Source="$(var.PublishDir)System.Xml.XPath.XDocument.dll" KeyPath="yes" />
   </Component>
+  <Component Id="C_Gen_Wctl_deps_json" Guid="*">
+    <File Id="Gen_Wctl_deps_json" Source="$(var.PublishDir)Wctl.deps.json" KeyPath="yes" />
+  </Component>
+  <Component Id="C_Gen_Wctl_dll" Guid="*">
+    <File Id="Gen_Wctl_dll" Source="$(var.PublishDir)Wctl.dll" KeyPath="yes" />
+  </Component>
+  <Component Id="C_Gen_Wctl_pdb" Guid="*">
+    <File Id="Gen_Wctl_pdb" Source="$(var.PublishDir)Wctl.pdb" KeyPath="yes" />
+  </Component>
+  <Component Id="C_Gen_Wctl_runtimeconfig_json" Guid="*">
+    <File Id="Gen_Wctl_runtimeconfig_json" Source="$(var.PublishDir)Wctl.runtimeconfig.json" KeyPath="yes" />
+  </Component>
   <Component Id="C_Gen_WindowsBase_dll" Guid="*">
     <File Id="Gen_WindowsBase_dll" Source="$(var.PublishDir)WindowsBase.dll" KeyPath="yes" />
   </Component>
-  <Component Id="C_Gen_WSearchHost_deps_json" Guid="*">
-    <File Id="Gen_WSearchHost_deps_json" Source="$(var.PublishDir)WSearchHost.deps.json" KeyPath="yes" />
+  <Component Id="C_Gen_WSearchAgent_deps_json" Guid="*">
+    <File Id="Gen_WSearchAgent_deps_json" Source="$(var.PublishDir)WSearchAgent.deps.json" KeyPath="yes" />
   </Component>
-  <Component Id="C_Gen_WSearchHost_dll" Guid="*">
-    <File Id="Gen_WSearchHost_dll" Source="$(var.PublishDir)WSearchHost.dll" KeyPath="yes" />
+  <Component Id="C_Gen_WSearchAgent_dll" Guid="*">
+    <File Id="Gen_WSearchAgent_dll" Source="$(var.PublishDir)WSearchAgent.dll" KeyPath="yes" />
   </Component>
-  <Component Id="C_Gen_WSearchHost_pdb" Guid="*">
-    <File Id="Gen_WSearchHost_pdb" Source="$(var.PublishDir)WSearchHost.pdb" KeyPath="yes" />
+  <Component Id="C_Gen_WSearchAgent_pdb" Guid="*">
+    <File Id="Gen_WSearchAgent_pdb" Source="$(var.PublishDir)WSearchAgent.pdb" KeyPath="yes" />
   </Component>
-  <Component Id="C_Gen_WSearchHost_runtimeconfig_json" Guid="*">
-    <File Id="Gen_WSearchHost_runtimeconfig_json" Source="$(var.PublishDir)WSearchHost.runtimeconfig.json" KeyPath="yes" />
+  <Component Id="C_Gen_WSearchAgent_runtimeconfig_json" Guid="*">
+    <File Id="Gen_WSearchAgent_runtimeconfig_json" Source="$(var.PublishDir)WSearchAgent.runtimeconfig.json" KeyPath="yes" />
+  </Component>
+  <Component Id="C_Gen_WSearchCfg_deps_json" Guid="*">
+    <File Id="Gen_WSearchCfg_deps_json" Source="$(var.PublishDir)WSearchCfg.deps.json" KeyPath="yes" />
+  </Component>
+  <Component Id="C_Gen_WSearchCfg_dll" Guid="*">
+    <File Id="Gen_WSearchCfg_dll" Source="$(var.PublishDir)WSearchCfg.dll" KeyPath="yes" />
+  </Component>
+  <Component Id="C_Gen_WSearchCfg_pdb" Guid="*">
+    <File Id="Gen_WSearchCfg_pdb" Source="$(var.PublishDir)WSearchCfg.pdb" KeyPath="yes" />
+  </Component>
+  <Component Id="C_Gen_WSearchCfg_runtimeconfig_json" Guid="*">
+    <File Id="Gen_WSearchCfg_runtimeconfig_json" Source="$(var.PublishDir)WSearchCfg.runtimeconfig.json" KeyPath="yes" />
   </Component>
   <Component Id="C_Gen_WSearchHostSvc_deps_json" Guid="*">
     <File Id="Gen_WSearchHostSvc_deps_json" Source="$(var.PublishDir)WSearchHostSvc.deps.json" KeyPath="yes" />
