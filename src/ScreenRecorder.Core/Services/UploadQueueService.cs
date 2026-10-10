@@ -24,16 +24,26 @@ public class UploadQueueService
     /// usar el drenado directo (sin cola) para que nada se acumule.</summary>
     public bool IsAvailable => _available;
 
-    public UploadQueueService(ILoggerService? logger = null)
+    public UploadQueueService(ILoggerService? logger = null, string? dbPath = null)
     {
         _logger = logger;
         try
         {
-            var dir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-                "ScreenRecorder");
-            Directory.CreateDirectory(dir);
-            _dbPath = Path.Combine(dir, "uploads.db");
+            if (string.IsNullOrEmpty(dbPath))
+            {
+                var dir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                    "ScreenRecorder");
+                Directory.CreateDirectory(dir);
+                _dbPath = Path.Combine(dir, "uploads.db");
+            }
+            else
+            {
+                // Ruta explícita (pruebas): base aislada para no depender del estado real.
+                _dbPath = dbPath;
+                var dir = Path.GetDirectoryName(_dbPath);
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            }
             Init();
             _available = true;
         }

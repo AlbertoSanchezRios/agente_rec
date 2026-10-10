@@ -29,7 +29,8 @@ public class CoreTests
     public void UploadQueueService_EnqueuesAndDrainsCorrectly()
     {
         var logger = new LoggerService();
-        var queue = new UploadQueueService(logger);
+        var db = Path.Combine(Path.GetTempPath(), $"q_{Guid.NewGuid():N}.db");
+        var queue = new UploadQueueService(logger, db);
 
         Assert.True(queue.IsAvailable);
 
@@ -39,19 +40,20 @@ public class CoreTests
         try
         {
             queue.Enqueue(tempFile);
-            var pending = queue.GetPending(10);
+            var pending = queue.GetPending(100000);
             Assert.Contains(tempFile, pending);
 
             var count = queue.CountPending();
             Assert.True(count >= 1);
 
             queue.MarkSent(tempFile);
-            var pendingAfter = queue.GetPending(10);
+            var pendingAfter = queue.GetPending(100000);
             Assert.DoesNotContain(tempFile, pendingAfter);
         }
         finally
         {
             if (File.Exists(tempFile)) File.Delete(tempFile);
+            foreach (var ext in new[] { "", "-wal", "-shm" }) { try { File.Delete(db + ext); } catch { } }
         }
     }
 
@@ -59,7 +61,8 @@ public class CoreTests
     public async System.Threading.Tasks.Task UploadQueueService_ConcurrentAccessWorks()
     {
         var logger = new LoggerService();
-        var queue = new UploadQueueService(logger);
+        var db = Path.Combine(Path.GetTempPath(), $"q_{Guid.NewGuid():N}.db");
+        var queue = new UploadQueueService(logger, db);
         Assert.True(queue.IsAvailable);
 
         var tasks = new System.Threading.Tasks.Task[10];
@@ -68,7 +71,7 @@ public class CoreTests
             int index = i;
             tasks[i] = System.Threading.Tasks.Task.Run(() =>
             {
-                var q = new UploadQueueService(logger);
+                var q = new UploadQueueService(logger, db);
                 for (int j = 0; j < 5; j++)
                 {
                     var dummy = $@"C:\dummy_test_{index}_{j}.mp4";
@@ -83,13 +86,15 @@ public class CoreTests
 
         await System.Threading.Tasks.Task.WhenAll(tasks);
         Assert.True(queue.IsAvailable);
+        foreach (var ext in new[] { "", "-wal", "-shm" }) { try { File.Delete(db + ext); } catch { } }
     }
 
     [Fact]
     public void UploadQueueService_LeaseClaimingPreventsDuplicateProcessing()
     {
         var logger = new LoggerService();
-        var queue = new UploadQueueService(logger);
+        var db = Path.Combine(Path.GetTempPath(), $"q_{Guid.NewGuid():N}.db");
+        var queue = new UploadQueueService(logger, db);
         Assert.True(queue.IsAvailable);
 
         var testFile = Path.Combine(Path.GetTempPath(), $"test_claim_{Guid.NewGuid():N}.mp4");
@@ -121,6 +126,7 @@ public class CoreTests
         finally
         {
             if (File.Exists(testFile)) File.Delete(testFile);
+            foreach (var ext in new[] { "", "-wal", "-shm" }) { try { File.Delete(db + ext); } catch { } }
         }
     }
 
