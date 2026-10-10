@@ -1405,6 +1405,12 @@ public partial class SettingsForm : Form
     /// </summary>
     private void ApplyConfigurationToRecording()
     {
+        // Guardar/Aplicar es una reanudación explícita: quita la detención voluntaria ('echate').
+        // Debe hacerse SIEMPRE, incluso en modo /settings (sin RecordingManager): si el agente
+        // no está corriendo, la bandera impedía que el watchdog lo relanzara y la grabación
+        // quedaba muerta de forma permanente.
+        ControlPipe.ClearStopFlag();
+
         if (_recordingManager == null) return;
 
         try
@@ -1422,9 +1428,6 @@ public partial class SettingsForm : Form
                 _recordingManager.Start();
                 _logger.LogInfo("Grabación iniciada con la nueva configuración");
             }
-
-            // Guardar/Aplicar es una reanudación explícita: quita la detención voluntaria ('echate')
-            ControlPipe.ClearStopFlag();
         }
         catch (Exception ex)
         {
