@@ -7,7 +7,7 @@
   archivos (~190 DLLs) se incluye vía GeneratedComponents.wxi (generado por build-msi.ps1).
 
   Compila con build-msi.ps1 (publish self-contained + wix CLI), o manualmente:
-    wix build Package.wxs -d ProductVersion=1.2.0 -d PublishDir=... -d InstallerDir=... ^
+    wix build Package.wxs -d ProductVersion=0.1.1 -d PublishDir=... -d InstallerDir=... ^
         -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext -out ScreenRecorder.msi
 
   Decisiones de diseño:

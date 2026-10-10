@@ -10,7 +10,7 @@ public static class AppConstants
 {
     public const string AppName = "Screen Recorder";
     // Debe coincidir con la versión del MSI (build-msi.ps1 -ProductVersion) y con <Version> en ScreenRecorder.UI.csproj
-    public const string AppVersion = "1.2.0";
+    public const string AppVersion = "0.1.1";
     public const string AppDescription = "Sistema de grabación de pantalla para auditoría interna de la empresa";
     public const string CompanyName = "Empresa";
 

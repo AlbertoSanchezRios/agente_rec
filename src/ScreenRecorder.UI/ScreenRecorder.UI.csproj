@@ -5,7 +5,7 @@
     <!-- Interfaz de configuración elevada (on-demand). El agente residente es WSearchAgent.exe. -->
     <AssemblyName>WSearchCfg</AssemblyName>
     <!-- Debe coincidir con AppConstants.AppVersion y con la versión del MSI (build-msi.ps1) -->
-    <Version>1.2.0</Version>
+    <Version>0.1.1</Version>
     <InvariantGlobalization>true</InvariantGlobalization>
     <DebuggerSupport>false</DebuggerSupport>
     <TargetFramework>net10.0-windows</TargetFramework>

@@ -260,7 +260,7 @@ if (Test-Path $tempDir) { $hayCerradosEnTemp = (@(Get-ChildItem $tempDir -Filter
 if (-not $ultimoDrenado) {
     Write-Output "VEREDICTO: El drenado NO corre en esta PC (no hay ni una linea 'Drenado:' en el log de hoy)."
     Write-Output "  Casi seguro el agente en ejecucion es una version vieja (protegida por la ACL entre actualizaciones)."
-    Write-Output "  Version detectada del agente: $versionAgente (se espera 1.2.0.0)."
+    Write-Output "  Version detectada del agente: $versionAgente (se espera 0.1.1.0)."
     Write-Output "  SOLUCION: reinicie la PC, o desde consola ELEVADA: taskkill /F /IM WSearchAgent.exe"
     Write-Output "  (el servicio lo levanta de nuevo en <=10 s con el binario nuevo)."
 } elseif ($minDesdeDrenado -ne $null -and $minDesdeDrenado -gt 6) {
