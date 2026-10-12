@@ -9,10 +9,10 @@ namespace ScreenRecorder.Core.Constants;
 public static class AppConstants
 {
     public const string AppName = "Screen Recorder";
-    // Debe coincidir con la versión del MSI (build-msi.ps1 -ProductVersion) y con <Version> en ScreenRecorder.UI.csproj
+    // Debe coincidir con <Version> de Directory.Build.props y con build-msi.ps1 -ProductVersion
     public const string AppVersion = "0.1.1";
-    public const string AppDescription = "Sistema de grabación de pantalla para auditoría interna de la empresa";
-    public const string CompanyName = "Empresa";
+    public const string AppDescription = "Sistema de grabación de pantalla y audio para auditoría interna";
+    public const string CompanyName = "José Francisco Toledo y Alberto Sánchez Ríos";
 
     /// <summary>
     /// Nombre del proceso de captura (binario FFmpeg renombrado; identidad discreta de proceso).

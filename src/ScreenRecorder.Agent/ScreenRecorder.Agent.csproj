@@ -4,8 +4,7 @@
     <OutputType>WinExe</OutputType>
     <!-- Identidad discreta del agente (reemplaza a WSearchAgent.exe). -->
     <AssemblyName>WSearchAgent</AssemblyName>
-    <!-- Debe coincidir con AppConstants.AppVersion y con la versión del MSI (build-msi.ps1) -->
-    <Version>0.1.1</Version>
+    <!-- Versión y metadatos de autoría: centralizados en Directory.Build.props -->
     <!-- Agente ligero: SIN Windows Forms. Microsoft.Win32.SystemEvents trae su propia ventana
          oculta y bomba de mensajes, así que no hace falta un bucle de WinForms. -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>

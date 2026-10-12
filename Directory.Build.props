@@ -1,0 +1,17 @@
+<Project>
+
+  <!-- Metadatos de autoría y versión comunes a TODOS los proyectos de la solución.
+       La versión es la única fuente de verdad para los ensamblados y debe permanecer
+       sincronizada con AppConstants.AppVersion y con el valor por defecto de
+       build-msi.ps1 (-ProductVersion). -->
+  <PropertyGroup>
+    <Version>0.1.1</Version>
+    <Company>José Francisco Toledo y Alberto Sánchez Ríos</Company>
+    <Product>Screen Recorder</Product>
+    <AssemblyTitle>Screen Recorder</AssemblyTitle>
+    <Description>Grabación de pantalla y audio para auditoría interna</Description>
+    <Copyright>Copyright © 2026 José Francisco Toledo y Alberto Sánchez Ríos. Todos los derechos reservados.</Copyright>
+    <Authors>José Francisco Toledo;Alberto Sánchez Ríos</Authors>
+  </PropertyGroup>
+
+</Project>
