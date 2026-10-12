@@ -19,10 +19,9 @@ permissions:
 jobs:
   build:
     name: Compilar y Empaquetar MSI
-    # Runner self-hosted en la red corporativa: necesario para firmar con la CA
-    # interna (AD CS) y acceder a su infraestructura. Requiere las etiquetas
-    # [self-hosted, windows] registradas en la organizacion/repositorio.
-    runs-on: [self-hosted, windows]
+    # Runner hospedado de GitHub. El certificado de firma es un PFX exportable
+    # (PKI privada propia), asi que no se necesita runner self-hosted.
+    runs-on: windows-latest
 
     steps:
       - name: Checkout del repositorio
@@ -80,18 +79,31 @@ jobs:
           SIGNING_PFX_PASSWORD: ${{ secrets.SIGNING_PFX_PASSWORD }}
         run: |
           $ver = "${{ github.event.inputs.product_version }}"
-          if ([string]::IsNullOrWhiteSpace($ver)) { $ver = "0.1.1" }
+          if ([string]::IsNullOrWhiteSpace($ver)) { $ver = "0.1.2" }
           if ("${{ github.ref }}" -match '^refs/tags/v([0-9]+\.[0-9]+\.[0-9]+)') {
             $ver = $Matches[1]
           }
           Write-Host "Compilando instalador MSI con version: $ver"
           if ($env:SIGNING_PFX_PATH) {
-            Write-Host "Firma con certificado de la CA interna (AD CS)."
+            Write-Host "Firma con certificado privado del producto."
             ./build-msi.ps1 -ProductVersion $ver -PfxPath $env:SIGNING_PFX_PATH -PfxPassword $env:SIGNING_PFX_PASSWORD
           } else {
             Write-Host "AVISO: sin certificado de firma."
             ./build-msi.ps1 -ProductVersion $ver
           }
+
+      - name: Verificar firma del MSI
+        shell: pwsh
+        run: |
+          if (-not $env:SIGNING_PFX_PATH) { Write-Host "Sin firma: se omite la verificacion."; exit 0 }
+          Import-Certificate -FilePath "dist/ScreenRecorder-RootCA.cer" -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\x64\\' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signtool) { throw "signtool no encontrado en el runner" }
+          $msi = Get-ChildItem dist/*.msi | Select-Object -First 1
+          & $signtool.FullName verify /pa /v $msi.FullName
+          if ($LASTEXITCODE -ne 0) { throw "La verificacion de firma del MSI fallo" }
+          Write-Host "Firma del MSI verificada correctamente."
 
       - name: Limpiar certificado de firma
         if: always()
@@ -105,14 +117,26 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ScreenRecorder-MSI
-          path: dist/*.msi
+          path: |
+            dist/*.msi
+            dist/*.cer
+            dist/install-cert.ps1
           if-no-files-found: error
 
       - name: Publicar GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.msi
+          files: |
+            dist/*.msi
+            dist/*.cer
+            dist/install-cert.ps1
+          body: |
+            Instalacion:
+            1. Instala el certificado raiz `ScreenRecorder-RootCA.cer` en "Entidades de certificacion raiz de confianza" (o ejecuta `install-cert.ps1` como administrador).
+            2. Ejecuta el MSI `ScreenRecorder-*.msi`.
+
+            El certificado raiz es publico y solo aporta confianza INTERNA (UAC / despliegue corporativo).
           prerelease: ${{ startsWith(github.ref_name, 'v0.') }}
           generate_release_notes: true
 
