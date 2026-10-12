@@ -28,7 +28,7 @@
   <Package Name="Screen Recorder"
            Language="1033"
            Version="$(var.ProductVersion)"
-           Manufacturer="Empresa"
+           Manufacturer="José Francisco Toledo y Alberto Sánchez Ríos"
            UpgradeCode="6F75FBAD-30D4-4523-9905-A60C1922114D"
            Scope="perMachine">
 
@@ -38,6 +38,12 @@
 
     <Icon Id="AppIcon" SourceFile="$(var.PublishDir)WSearchAgent.exe" />
     <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+    <!-- Metadatos mostrados en "Aplicaciones instaladas" del Panel de control -->
+    <Property Id="ARPCOMMENTS"
+              Value="Software propietario de José Francisco Toledo y Alberto Sánchez Ríos. Copyright © 2026. Todos los derechos reservados. Uso interno. El tratamiento de datos personales se describe en el Aviso de Privacidad (PRIVACY.md)." />
+    <Property Id="ARPCONTACT" Value="José Francisco Toledo y Alberto Sánchez Ríos" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/AlbertoSanchezRios/agente_rec" />
+    <Property Id="ARPNOMODIFY" Value="1" />
 
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
     <UIRef Id="WixUI_ErrorProgressText" />
