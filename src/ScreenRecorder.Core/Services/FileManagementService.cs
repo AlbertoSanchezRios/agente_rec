@@ -32,7 +32,16 @@ public class FileManagementService : IFileManagementService
         await TryUploadFileAsync(filePath);
     }
 
-    public async Task<bool> TryUploadFileAsync(string filePath, int maxRetries = 3)
+    public Task<bool> TryUploadFileAsync(string filePath, int maxRetries = 3)
+        => TryUploadFileAsync(filePath, null, maxRetries);
+
+    /// <summary>
+    /// Igual que <see cref="TryUploadFileAsync(string,int)"/> pero permite forzar la ruta de red
+    /// destino. Se usa, por ejemplo, para probar desde Ajustes la ruta recién escrita antes de
+    /// guardarla. Si <paramref name="overrideNetworkPath"/> es null o vacío, se usa la ruta
+    /// configurada en el registro.
+    /// </summary>
+    public async Task<bool> TryUploadFileAsync(string filePath, string? overrideNetworkPath, int maxRetries = 3)
     {
         if (!File.Exists(filePath))
         {
@@ -52,7 +61,7 @@ public class FileManagementService : IFileManagementService
 
         try
         {
-            return await ExecuteUploadWithRetriesAsync(filePath, maxRetries);
+            return await ExecuteUploadWithRetriesAsync(filePath, overrideNetworkPath, maxRetries);
         }
         finally
         {
@@ -60,10 +69,16 @@ public class FileManagementService : IFileManagementService
         }
     }
 
-    private async Task<bool> ExecuteUploadWithRetriesAsync(string filePath, int maxRetries)
+    private async Task<bool> ExecuteUploadWithRetriesAsync(string filePath, string? overrideNetworkPath, int maxRetries)
     {
-        var settings = _settingsService.LoadSettings();
-        if (string.IsNullOrWhiteSpace(settings.NetworkPath))
+        // Ruta destino: la forzada (p. ej. valor escrito en Ajustes) o la configurada. Si viene
+        // forzada, NO se lee el registro (evita el log engañoso de "configuración por defecto").
+        var configuredNetworkPath = overrideNetworkPath;
+        if (string.IsNullOrWhiteSpace(configuredNetworkPath))
+        {
+            configuredNetworkPath = _settingsService.LoadSettings().NetworkPath;
+        }
+        if (string.IsNullOrWhiteSpace(configuredNetworkPath))
         {
             _logger.LogWarning("Ruta de red NUC no configurada. El archivo permanecerá en carpeta temporal.");
             return false;
@@ -73,7 +88,7 @@ public class FileManagementService : IFileManagementService
 
         // Resolver la ruta efectiva: si es una letra de unidad no visible para este proceso
         // (p. ej. app elevada) pero su UNC sí es accesible, subir por el UNC.
-        var effectiveNetworkPath = ResolveEffectiveNetworkPath(settings.NetworkPath);
+        var effectiveNetworkPath = ResolveEffectiveNetworkPath(configuredNetworkPath);
         var destinationPath = Path.Combine(effectiveNetworkPath, fileName);
 
         for (int attempt = 1; attempt <= maxRetries; attempt++)
@@ -149,7 +164,7 @@ public class FileManagementService : IFileManagementService
                 catch (UnauthorizedAccessException ex)
                 {
                     if (tempDestinationPath != null) { try { if (File.Exists(tempDestinationPath)) File.Delete(tempDestinationPath); } catch { } }
-                    _logger.LogError($"Sin permisos para acceder a la ruta de red: {effectiveNetworkPath}. Diagnóstico: {NetworkPathHelper.BuildInaccessibleDiagnostics(settings.NetworkPath)}", ex);
+                    _logger.LogError($"Sin permisos para acceder a la ruta de red: {effectiveNetworkPath}. Diagnóstico: {NetworkPathHelper.BuildInaccessibleDiagnostics(configuredNetworkPath)}", ex);
                     break; // No reintentar si es problema de permisos
                 }
                 catch (IOException ex)

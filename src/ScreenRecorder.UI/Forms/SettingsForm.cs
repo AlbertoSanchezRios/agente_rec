@@ -801,7 +801,9 @@ public partial class SettingsForm : Form
                 $"Prueba de envío de Screen Recorder {Environment.MachineName} {DateTime.Now:yyyy-MM-dd HH:mm:ss}{Environment.NewLine}");
 
             var fileManagement = new FileManagementService(_logger, _settingsService);
-            var ok = await fileManagement.TryUploadFileAsync(testFile, maxRetries: 1);
+            // Se prueba la ruta RESUMIDA aquí (la escrita/UNC), no la guardada: así Probar
+            // funciona antes de pulsar Guardar.
+            var ok = await fileManagement.TryUploadFileAsync(testFile, path, maxRetries: 1);
 
             if (ok)
             {
@@ -811,7 +813,8 @@ public partial class SettingsForm : Form
                 var note = resolvedUnc != null ? $"\n\n(La unidad no es visible aquí; se usará {resolvedUnc})" : string.Empty;
                 MessageBox.Show(
                     "Prueba correcta.\n\nEl archivo de prueba llegó a:\n" + destino + note +
-                    "\n\nLos videos usan este mismo camino.",
+                    "\n\nLos videos subirán a este mismo camino.\n\n" +
+                    "Recuerde pulsar GUARDAR para aplicarlo.",
                     "Probar", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             else
