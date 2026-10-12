@@ -36,7 +36,6 @@ public class RecordingSettings
     public bool ManualAudioSelection { get; set; } = false;
     public string? SystemAudioDevice { get; set; }
     public string? MicrophoneDevice { get; set; }
-    public bool EnableNotifications { get; set; } = true;
     public string? NetworkPath { get; set; }
     public bool UseUsernameInFilename { get; set; } = false;
     public bool UseMachineNameInFilename { get; set; } = false;
