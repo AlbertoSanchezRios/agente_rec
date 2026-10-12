@@ -119,3 +119,16 @@ Comprobará el servicio supervisor, los procesos activos, la conexión con la re
 ## 🔒 Privacidad y Gobierno Corporativo
 
 Esta aplicación forma parte de los sistemas de auditoría interna de la organización y se instala de forma exclusiva en estaciones de trabajo y portátiles corporativos proporcionados por la empresa. No captura pantallas durante estados de bloqueo de sesión (`Win + L`) y toda transferencia de información se encuentra protegida por los protocolos de seguridad de la red institucional.
+
+El tratamiento de datos personales se detalla en el **[Aviso de Privacidad](PRIVACY.md)**, emitido conforme a la Ley Federal de Protección de Datos Personales en Posesión de los Particulares (LFPDPPP).
+
+---
+
+## ⚖️ Licencia y Titularidad
+
+- **[LICENSE](LICENSE)** — Licencia de software **propietario**. Copyright © 2026 **José Francisco Toledo** y **Alberto Sánchez Ríos**. Todos los derechos reservados. Titularidad de los derechos patrimoniales al **50%** entre ambos autores.
+- **[PRIVACY.md](PRIVACY.md)** — Aviso de Privacidad (LFPDPPP).
+- **[NOTICE](NOTICE)** — Avisos de componentes de terceros (FFmpeg GPLv3, .NET, WiX, SQLite).
+- **[docs/titularidad.md](docs/titularidad.md)** — Declaración de autoría y titularidad.
+
+Este software es de uso interno exclusivo. Se concede únicamente un derecho limitado, no transferible y no sublicenciable de instalación y ejecución en estaciones propiedad de la organización. Los componentes de terceros conservan sus propias licencias.
