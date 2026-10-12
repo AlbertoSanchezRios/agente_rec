@@ -224,7 +224,7 @@ public class AudioDetectionService : IAudioDetectionService
             })
             .ToList();
 
-        _logger.LogInfo($"Se detectaron {devices.Count} dispositivos de audio del sistema (mezcla estéreo): [{string.Join(", ", devices.Select(d => d.Name))}]");
+        _logger.LogInfo($"Se detectaron {devices.Count} dispositivos de audio del sistema por dshow (salida del sistema): [{string.Join(", ", devices.Select(d => d.Name))}]");
         
         // Log detallado de cada dispositivo y qué se usará para FFmpeg
         foreach (var device in devices)
@@ -282,7 +282,7 @@ public class AudioDetectionService : IAudioDetectionService
         
         if (devices.Count == 0)
         {
-            _logger.LogWarning("No se detectaron dispositivos de audio del sistema (mezcla estéreo)");
+            _logger.LogWarning("No se detectaron dispositivos de audio del sistema por dshow; el audio del sistema se captura por WASAPI loopback (no requiere 'Mezcla estéreo').");
             return null;
         }
         
