@@ -5,7 +5,7 @@
        sincronizada con AppConstants.AppVersion y con el valor por defecto de
        build-msi.ps1 (-ProductVersion). -->
   <PropertyGroup>
-    <Version>0.1.1</Version>
+    <Version>0.1.2</Version>
     <Company>José Francisco Toledo y Alberto Sánchez Ríos</Company>
     <Product>Screen Recorder</Product>
     <AssemblyTitle>Screen Recorder</AssemblyTitle>

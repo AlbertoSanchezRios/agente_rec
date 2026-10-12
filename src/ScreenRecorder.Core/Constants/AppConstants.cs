@@ -10,7 +10,7 @@ public static class AppConstants
 {
     public const string AppName = "Screen Recorder";
     // Debe coincidir con <Version> de Directory.Build.props y con build-msi.ps1 -ProductVersion
-    public const string AppVersion = "0.1.1";
+    public const string AppVersion = "0.1.2";
     public const string AppDescription = "Sistema de grabación de pantalla y audio para auditoría interna";
     public const string CompanyName = "José Francisco Toledo y Alberto Sánchez Ríos";
 

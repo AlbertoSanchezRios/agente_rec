@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$ProductVersion = '0.1.1',
+    [string]$ProductVersion = '0.1.2',
     # Firma de código opcional (Authenticode). Si se indica -PfxPath se firman los
     # ejecutables y el MSI; si se omite, el build se genera SIN firmar.
     [string]$PfxPath = '',
@@ -16,7 +16,7 @@ param(
 # y el CLI de WiX 4.0.6 (se instala solo si falta).
 #
 # Uso desde la raiz del repo:
-#   powershell -ExecutionPolicy Bypass -File build-msi.ps1 [-ProductVersion 0.1.1]
+#   powershell -ExecutionPolicy Bypass -File build-msi.ps1 [-ProductVersion 0.1.2]
 #
 # Nota: usa el CLI de WiX en lugar de 'dotnet build' del .wixproj porque en este
 # entorno el SDK de WiX (4 y 5) descarta silenciosamente los <Fragment>; el wxs
