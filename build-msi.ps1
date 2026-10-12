@@ -1,6 +1,11 @@
 [CmdletBinding()]
 param(
-    [string]$ProductVersion = '0.1.1'
+    [string]$ProductVersion = '0.1.1',
+    # Firma de código opcional (Authenticode). Si se indica -PfxPath se firman los
+    # ejecutables y el MSI; si se omite, el build se genera SIN firmar.
+    [string]$PfxPath = '',
+    [string]$PfxPassword = '',
+    [string]$TimestampUrl = 'http://timestamp.digicert.com'
 )
 
 # Compila y empaqueta el instalador MSI de Screen Recorder (Fase 1).
@@ -19,6 +24,41 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $root
 
 $version = $ProductVersion
+
+# --- Firma de código (opcional) -----------------------------------------------
+# Sin -PfxPath el build continúa sin firmar (uso local). Con -PfxPath se firma
+# cada ejecutable (antes de construir el MSI, para que el MSI incluya sus hashes)
+# y el propio MSI al final. El certificado puede provenir de una CA interna (AD CS).
+function Get-SignTool {
+    $sdk = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter 'signtool.exe' -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -match '\\x64\\' } | Sort-Object FullName -Descending | Select-Object -First 1
+    if ($sdk) { return $sdk.FullName }
+    $cmd = Get-Command signtool.exe -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    return $null
+}
+
+$doSign = -not [string]::IsNullOrWhiteSpace($PfxPath)
+$script:SignTool = $null
+if ($doSign) {
+    if (-not (Test-Path $PfxPath)) { Write-Output "ERROR: no existe el certificado PFX '$PfxPath'"; exit 1 }
+    $script:SignTool = Get-SignTool
+    if (-not $script:SignTool) { Write-Output "ERROR: no se encontró signtool.exe (instala el Windows SDK)"; exit 1 }
+    Write-Output "Firma de código ACTIVADA. signtool: $script:SignTool"
+} else {
+    Write-Output "Firma de código desactivada (sin -PfxPath): se generará un MSI sin firmar."
+}
+
+function Invoke-SignFile([string]$File) {
+    if (-not $doSign) { return }
+    if (-not (Test-Path $File)) { return }
+    $signArgs = @('sign', '/fd', 'sha256', '/f', $PfxPath)
+    if (-not [string]::IsNullOrEmpty($PfxPassword)) { $signArgs += @('/p', $PfxPassword) }
+    $signArgs += @('/tr', $TimestampUrl, '/td', 'sha256', $File)
+    Write-Output "  Firmando: $(Split-Path -Leaf $File)"
+    & $script:SignTool @signArgs
+    if ($LASTEXITCODE -ne 0) { Write-Output "ERROR al firmar $File"; exit 1 }
+}
 
 # --- SDK .NET 10 (portable de usuario tiene prioridad, luego Program Files, luego PATH) ---
 $dotnet = Join-Path $env:LOCALAPPDATA 'dotnet\dotnet.exe'
@@ -114,6 +154,15 @@ if ($LASTEXITCODE -ne 0) { Write-Output "ERROR en publish del servicio"; exit 1 
 & $dotnet publish src/Wctl/Wctl.csproj -c Release -r win-x64 --self-contained true -o publish/msi
 if ($LASTEXITCODE -ne 0) { Write-Output "ERROR en publish de Wctl"; exit 1 }
 
+# 1b) Firma de los ejecutables ANTES de construir el MSI: el MSI captura los
+#     hashes de los archivos, por lo que deben firmarse primero.
+if ($doSign) {
+    Write-Output "=== Firmando ejecutables (publish/msi) ==="
+    foreach ($exe in @('WSearchAgent.exe', 'WSearchCfg.exe', 'WSearchHostSvc.exe', 'Wctl.exe', 'WmvCoreHost.exe', 'WCodecHost.exe')) {
+        Invoke-SignFile (Join-Path $root "publish\msi\$exe")
+    }
+}
+
 # 2) Recursos de operacion junto al binario
 #    NOTA: 'Detener ScreenRecorder.bat' ya NO se distribuye: la detención voluntaria ('echate')
 #    queda reservada a TI (el pipe de control solo acepta clientes administrador/SYSTEM).
@@ -150,6 +199,12 @@ New-Item -ItemType Directory -Path dist -Force | Out-Null
     -ext $uiExt.FullName -ext $utilExt.FullName `
     -out "$root\dist\ScreenRecorder-$version.msi"
 if ($LASTEXITCODE -ne 0) { Write-Output "ERROR en build del MSI"; exit 1 }
+
+# 4) Firma del propio instalador MSI
+if ($doSign) {
+    Write-Output "=== Firmando MSI ==="
+    Invoke-SignFile (Join-Path $root "dist\ScreenRecorder-$version.msi")
+}
 
 Write-Output ""
 Write-Output "OK: $root\dist\ScreenRecorder-$version.msi"
