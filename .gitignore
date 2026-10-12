@@ -61,6 +61,14 @@ project.assets.json
 .wix/
 
 # -----------------------------------------------------------------------
+# Firma de codigo: NUNCA subir claves privadas. El .cer publico del root
+# y de la hoja SI pueden versionarse (carpeta certs/).
+# -----------------------------------------------------------------------
+*.pfx
+*.p12
+*.snk
+
+# -----------------------------------------------------------------------
 # Binarios pesados externos (FFmpeg)
 # NOTA: WmvCoreHost.exe / WCodecHost.exe son binarios de FFmpeg (decenas de MB).
 # No deben subirse a GitHub (supera el límite de 100 MB). Se descargan/compilan aparte.
