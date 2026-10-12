@@ -113,3 +113,28 @@ Para evitar que un usuario manipule los ajustes (como cambiar la resolución a 1
 - **Respeto a las Pausas del Empleado:** Cuando el trabajador bloquea la estación (`Win + L`) para salir a su descanso o almuerzo, la grabación se detiene automáticamente. No se capturan sesiones vacías ni se monitoriza la pantalla durante ausencias justificadas.
 - **Propiedad y Titularidad:** Este software es propiedad de José Francisco Toledo y Alberto Sánchez Ríos (copyright © 2026, todos los derechos reservados), según la licencia propietaria incluida en el archivo [`LICENSE`](../LICENSE) y la declaración de autoría y titularidad en [`docs/titularidad.md`](titularidad.md). Está concebido exclusivamente para estaciones de trabajo propiedad de la organización, bajo las políticas internas de uso de activos tecnológicos y de conformidad con la legislación laboral aplicable.
 - **Aviso de Privacidad:** El tratamiento de datos personales (video de pantalla, audio y metadatos) se describe en el [`Aviso de Privacidad`](../PRIVACY.md), emitido conforme a la Ley Federal de Protección de Datos Personales en Posesión de los Particulares (LFPDPPP).
+
+---
+
+## 6. Firma de Código (Authenticode)
+
+Para que Windows no muestre "Editor desconocido" (UAC) en los equipos corporativos, el MSI y los
+ejecutables se firman con una **PKI privada propia** (root CA + certificado hoja de firma de código):
+
+- **Root CA** (`certs/ScreenRecorder-RootCA.cer`, público): se distribuye. No se versiona su clave privada.
+- **Hoja de firma** (`certs/ScreenRecorder-CodeSigning.cer` público; `.pfx` con clave privada **nunca** al repo).
+- **Firma:** `build-msi.ps1 -PfxPath <hoja.pfx> -PfxPassword <pass>`. Firma los EXE antes de construir el MSI
+  (para que el MSI incluya sus hashes) y el propio MSI al final. El CI lo hace con los secretos
+  `SIGNING_PFX_BASE64` y `SIGNING_PFX_PASSWORD`.
+- **Sin sello de tiempo** (no hay TSA interno en workgroup): la firma es válida mientras el certificado no
+  caduque (validez 3 años).
+
+### Despliegue de la confianza en cada equipo
+La confianza es **interna**: solo los equipos que instalen el root confían en la firma.
+1. **Automático:** el MSI instala el root en *Entidades de certificación raíz de confianza* y la hoja en
+   *Editores de confianza* (custom actions como SYSTEM). Se retiran al desinstalar.
+2. **Manual / Intune / SCCM:** ejecutar `install-cert.ps1` (administrador) en el equipo, o distribuir el
+   `.cer` con Intune/GPO. El `.cer` y el script se adjuntan también al GitHub Release.
+
+**Limitaciones:** no otorga confianza pública; el **SmartScreen de descargas de Internet** seguirá avisando
+(exige una CA del Microsoft Trusted Root Program). *Smart App Control* debe estar desactivado.

@@ -30,6 +30,13 @@ powershell -ExecutionPolicy Bypass -File build-msi.ps1
    ```
    dist\ScreenRecorder-0.1.1.msi
    ```
+7. Copia a `dist/` los certificados públicos (`ScreenRecorder-RootCA.cer`, `ScreenRecorder-CodeSigning.cer`) y `install-cert.ps1`.
+
+**Firma de código (opcional):** para firmar el MSI y los ejecutables con la PKI privada:
+```powershell
+powershell -ExecutionPolicy Bypass -File build-msi.ps1 -PfxPath <hoja.pfx> -PfxPassword <pass>
+```
+Detalles en [`docs/seguridad.md`](seguridad.md) §6. El CI firma con los secretos `SIGNING_PFX_BASE64`/`SIGNING_PFX_PASSWORD`.
 
 ---
 
