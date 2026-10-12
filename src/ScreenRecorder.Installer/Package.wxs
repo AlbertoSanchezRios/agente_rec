@@ -43,7 +43,6 @@
               Value="Software propietario de José Francisco Toledo y Alberto Sánchez Ríos. Copyright © 2026. Todos los derechos reservados. Uso interno. El tratamiento de datos personales se describe en el Aviso de Privacidad (PRIVACY.md)." />
     <Property Id="ARPCONTACT" Value="José Francisco Toledo y Alberto Sánchez Ríos" />
     <Property Id="ARPHELPLINK" Value="https://github.com/AlbertoSanchezRios/agente_rec" />
-    <Property Id="ARPNOMODIFY" Value="1" />
 
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
     <UIRef Id="WixUI_ErrorProgressText" />
