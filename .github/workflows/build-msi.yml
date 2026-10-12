@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
     inputs:
       product_version:
-        description: 'Version del producto MSI (ej. 1.2.0)'
+        description: 'Version del producto MSI (ej. 0.1.1)'
         required: false
-        default: '1.2.0'
+        default: '0.1.1'
 
 permissions:
   contents: write
@@ -19,7 +19,10 @@ permissions:
 jobs:
   build:
     name: Compilar y Empaquetar MSI
-    runs-on: windows-latest
+    # Runner self-hosted en la red corporativa: necesario para firmar con la CA
+    # interna (AD CS) y acceder a su infraestructura. Requiere las etiquetas
+    # [self-hosted, windows] registradas en la organizacion/repositorio.
+    runs-on: [self-hosted, windows]
 
     steps:
       - name: Checkout del repositorio
@@ -57,16 +60,46 @@ jobs:
             Write-Host "Binario WmvCoreHost.exe ya presente en el entorno."
           }
 
+      - name: Preparar certificado de firma (si existe)
+        shell: pwsh
+        env:
+          SIGNING_PFX_BASE64: ${{ secrets.SIGNING_PFX_BASE64 }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SIGNING_PFX_BASE64)) {
+            Write-Host "Sin secreto SIGNING_PFX_BASE64: el MSI se generara SIN firmar."
+            exit 0
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP 'codesign.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SIGNING_PFX_BASE64))
+          "SIGNING_PFX_PATH=$pfx" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Certificado de firma preparado."
+
       - name: Compilar y Empaquetar MSI
         shell: pwsh
+        env:
+          SIGNING_PFX_PASSWORD: ${{ secrets.SIGNING_PFX_PASSWORD }}
         run: |
           $ver = "${{ github.event.inputs.product_version }}"
-          if ([string]::IsNullOrWhiteSpace($ver)) { $ver = "1.2.0" }
+          if ([string]::IsNullOrWhiteSpace($ver)) { $ver = "0.1.1" }
           if ("${{ github.ref }}" -match '^refs/tags/v([0-9]+\.[0-9]+\.[0-9]+)') {
             $ver = $Matches[1]
           }
           Write-Host "Compilando instalador MSI con version: $ver"
-          ./build-msi.ps1 -ProductVersion $ver
+          if ($env:SIGNING_PFX_PATH) {
+            Write-Host "Firma con certificado de la CA interna (AD CS)."
+            ./build-msi.ps1 -ProductVersion $ver -PfxPath $env:SIGNING_PFX_PATH -PfxPassword $env:SIGNING_PFX_PASSWORD
+          } else {
+            Write-Host "AVISO: sin certificado de firma."
+            ./build-msi.ps1 -ProductVersion $ver
+          }
+
+      - name: Limpiar certificado de firma
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:SIGNING_PFX_PATH -and (Test-Path $env:SIGNING_PFX_PATH)) {
+            Remove-Item -Force $env:SIGNING_PFX_PATH
+          }
 
       - name: Subir artefacto MSI
         uses: actions/upload-artifact@v4
