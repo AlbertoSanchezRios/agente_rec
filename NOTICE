@@ -1,0 +1,50 @@
+AVISOS DE COMPONENTES DE TERCEROS (NOTICE)
+Screen Recorder - Copyright (c) 2026 José Francisco Toledo y Alberto Sánchez Ríos.
+
+Este producto incluye y/o distribuye los siguientes componentes de terceros.
+Cada componente se rige por su propia licencia y conserva todos sus términos;
+la licencia propietaria del producto (véase LICENSE) NO se aplica a ellos.
+
+--------------------------------------------------------------------------
+1) FFmpeg (distribuido como "WmvCoreHost.exe" y "WCodecHost.exe")
+--------------------------------------------------------------------------
+FFmpeg se distribuye bajo la GNU General Public License, versión 3 (GPLv3).
+Las compilaciones utilizadas incluyen componentes GPL (por ejemplo, libx264),
+por lo que el binario distribuido está sujeto a la GPLv3.
+
+En cumplimiento de la GPLv3 se proporciona:
+  - El texto íntegro de la licencia: https://www.gnu.org/licenses/gpl-3.0.txt
+  - Acceso al código fuente correspondiente a la versión exacta distribuida:
+    [ENLACE O MEDIO PARA OBTENER EL CÓDIGO FUENTE DE FFMPEG]
+    (o el correspondiente al build propio generado por tools/build-ffmpeg.sh)
+
+FFmpeg se invoca como proceso independiente; no se enlaza con el producto, por
+lo que se considera una agregación y no afecta la licencia propietaria del
+resto del Software. Los Titulares no ofrecen garantía alguna sobre FFmpeg.
+
+FFmpeg: Copyright (c) 2000-2026 the FFmpeg developers.
+
+--------------------------------------------------------------------------
+2) .NET Runtime (Microsoft) - auto-contenido
+--------------------------------------------------------------------------
+El runtime de .NET se redistribuye bajo la licencia MIT y sus avisos de
+terceros. Texto de licencia: https://github.com/dotnet/runtime/blob/main/LICENSE.TXT
+Avisos de terceros de .NET: https://github.com/dotnet/runtime/blob/main/THIRD-PARTY-NOTICES.TXT
+
+Copyright (c) .NET Foundation and Contributors.
+
+--------------------------------------------------------------------------
+3) WiX Toolset 4 (solo en tiempo de compilación)
+--------------------------------------------------------------------------
+WiX Toolset se usa únicamente para generar el instalador MSI y NO se
+redistribuye dentro del producto. Licencia: Microsoft Reciprocal License (MS-RL).
+https://wixtoolset.org/
+
+--------------------------------------------------------------------------
+4) Otras dependencias de .NET
+--------------------------------------------------------------------------
+Microsoft.Data.Sqlite y Microsoft.Win32.SystemEvents: MIT.
+SQLite es de dominio público (https://www.sqlite.org/copyright.html).
+
+Los componentes anteriores se suministran "tal cual", sin garantía. Consulte
+cada enlace para los términos completos.

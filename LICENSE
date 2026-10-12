@@ -1,0 +1,52 @@
+LICENCIA DE SOFTWARE PROPIETARIO
+Autoría y Titularidad Compartida (50/50)
+Copyright (c) 2026 José Francisco Toledo y Alberto Sánchez Ríos.
+Todos los derechos reservados.
+
+Este software ("Screen Recorder"), su código fuente, documentación, binarios,
+scripts de compilación e instalador (en conjunto, "el Software") es propiedad
+intelectual de José Francisco Toledo y Alberto Sánchez Ríos (los "Titulares"),
+quienes ostentan los derechos patrimoniales de autor en partes iguales
+(cincuenta por ciento (50%) cada uno), conforme a la Ley Federal del Derecho
+de Autor y demás legislación aplicable en los Estados Unidos Mexicanos.
+
+1. CONCESIÓN DE USO
+Se concede únicamente un derecho limitado, no exclusivo, no transferible y no
+sublicenciable de instalar y ejecutar el Software exclusivamente sobre
+estaciones de trabajo propiedad de la organización titular, para fines
+internos de auditoría y seguridad de la información, en los términos del
+Aviso de Privacidad (PRIVACY.md).
+
+2. RESTRICCIONES
+Queda estrictamente prohibido, sin la autorización previa y por escrito de
+los Titulares:
+  a) Copiar, distribuir, publicar, comunicar o poner a disposición de
+     terceros el Software, total o parcialmente.
+  b) Modificar, adaptar, traducir, descompilar, aplicar ingeniería inversa o
+     desensamblar el Software, o crear obras derivadas.
+  c) Sublicenciar, arrendar, alquilar, prestar, vender o explotar
+     comercialmente el Software.
+  d) Eliminar o alterar los avisos de autoría, copyright o titularidad.
+
+3. COMPONENTES DE TERCEROS
+El Software integra y/o distribuye componentes de terceros que se rigen por
+sus propias licencias (por ejemplo, FFmpeg bajo GNU GPL v3 y el runtime de
+.NET bajo licencia MIT). Dichos componentes NO se rigen por esta licencia y
+conservan sus términos originales. Véase el archivo NOTICE.
+
+4. AUSENCIA DE GARANTÍA
+EL SOFTWARE SE PROPORCIONA "TAL CUAL", SIN GARANTÍA DE NINGÚN TIPO, EXPRESA
+O IMPLÍCITA, INCLUYENDO SIN LIMITAR GARANTÍAS DE COMERCIABILIDAD, IDONEIDAD
+PARA UN FIN PARTICULAR Y NO INFRACCIÓN.
+
+5. LIMITACIÓN DE RESPONSABILIDAD
+EN NINGÚN CASO LOS TITULARES SERÁN RESPONSABLES POR DAÑOS DIRECTOS,
+INDIRECTOS, INCIDENTALES O CONSECUENTES DERIVADOS DEL USO O LA IMPOSIBILIDAD
+DE USO DEL SOFTWARE.
+
+6. LEY APLICABLE Y JURISDICCIÓN
+Esta licencia se rige por las leyes de los Estados Unidos Mexicanos. Para la
+interpretación y cumplimiento, las partes se someten a los tribunales
+competentes de [JURISDICCIÓN].
+
+Para consultas sobre licenciamiento, contacto: [CONTACTO].
