@@ -91,7 +91,17 @@
         <File Source="$(var.PublishDir)install-autostart.ps1" />
         <File Source="$(var.PublishDir)verify-autostart.ps1" />
         <File Source="$(var.PublishDir)uninstall.ps1" />
+        <File Source="$(var.PublishDir)install-cert.ps1" />
         <File Source="$(var.PublishDir)LEEME-PRUEBAS.txt" />
+      </Component>
+      <!-- Certificados PUBLICOS (sin clave privada): el root y la hoja de firma. Se usan
+           para instalar la confianza en el equipo (root -> Root, hoja -> TrustedPublisher).
+           En componentes separados: un GUID automatico por componente no admite varios ficheros. -->
+      <Component Id="RootCaCert" Guid="*">
+        <File Id="RootCaCer" Source="$(var.PublishDir)ScreenRecorder-RootCA.cer" KeyPath="yes" />
+      </Component>
+      <Component Id="CodeSigningCert" Guid="*">
+        <File Id="CodeSigningCer" Source="$(var.PublishDir)ScreenRecorder-CodeSigning.cer" KeyPath="yes" />
       </Component>
       <!-- Servicio watchdog (LocalSystem): rearranca el agente si lo finalizan, sube
            huérfanos y escribe heartbeat. Se instifica con el MSI (también lo crea
@@ -192,6 +202,27 @@
                   ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;Remove-Item -Path 'C:\ProgramData\ScreenRecorder\stopped' -Force -ErrorAction SilentlyContinue; exit 0&quot;"
                   Execute="deferred" Impersonate="yes" Return="ignore" />
 
+    <!-- Instalar el certificado raiz (y la hoja en Editores de confianza) para que Windows
+         confie en la firma de codigo. Se ejecutan como SYSTEM (Impersonate=no) para poder
+         escribir en LocalMachine\Root y LocalMachine\TrustedPublisher. Return=ignore: un fallo
+         no aborta la instalacion. En desinstalacion se retira el root. -->
+    <SetProperty Id="CA_InstallRootCert" Sequence="execute" Before="CA_InstallRootCert"
+                 Value="[INSTALLFOLDER]ScreenRecorder-RootCA.cer" />
+    <CustomAction Id="CA_InstallRootCert"
+                  Directory="SystemFolder"
+                  ExeCommand="certutil.exe -addstore -f Root &quot;[CA_InstallRootCert]&quot;"
+                  Execute="deferred" Impersonate="no" Return="ignore" />
+    <SetProperty Id="CA_InstallSignerCert" Sequence="execute" Before="CA_InstallSignerCert"
+                 Value="[INSTALLFOLDER]ScreenRecorder-CodeSigning.cer" />
+    <CustomAction Id="CA_InstallSignerCert"
+                  Directory="SystemFolder"
+                  ExeCommand="certutil.exe -addstore -f TrustedPublisher &quot;[CA_InstallSignerCert]&quot;"
+                  Execute="deferred" Impersonate="no" Return="ignore" />
+    <CustomAction Id="CA_RemoveRootCert"
+                  Directory="SystemFolder"
+                  ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -eq 'CN=Screen Recorder Root CA' } | Remove-Item -Force -ErrorAction SilentlyContinue; exit 0&quot;"
+                  Execute="deferred" Impersonate="no" Return="ignore" />
+
     <!-- Auto-registro del autoarranque durante la instalación: ejecuta install-autostart.ps1
          (ya copiado) como el usuario que instala. Registra la tarea programada supervisada
          y asegura el servicio watchdog, sin pasos manuales. Impersonada: la tarea queda
@@ -227,7 +258,10 @@
       <Custom Action="CA_StopBeforeCopy" Before="InstallFiles" />
       <Custom Action="CA_KillLeftovers" Before="InstallFiles" />
       <Custom Action="CA_ClearStopAfterCopy" After="InstallFiles" />
+      <Custom Action="CA_InstallRootCert" After="InstallFiles" Condition="NOT REMOVE" />
+      <Custom Action="CA_InstallSignerCert" After="CA_InstallRootCert" Condition="NOT REMOVE" />
       <Custom Action="CA_RegisterAutostart" After="CA_ClearStopAfterCopy" Condition="NOT REMOVE" />
+      <Custom Action="CA_RemoveRootCert" Before="RemoveFiles" Condition="REMOVE" />
       <Custom Action="CA_SetLaunchConfig" After="InstallFinalize" Condition="NOT REMOVE AND UILevel &gt; 2" />
       <Custom Action="CA_LaunchConfig" After="CA_SetLaunchConfig" Condition="NOT REMOVE AND UILevel &gt; 2" />
     </InstallExecuteSequence>
