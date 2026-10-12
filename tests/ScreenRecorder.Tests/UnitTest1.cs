@@ -225,4 +225,44 @@ public class CoreTests
             try { if (!process.HasExited) process.Kill(); } catch { }
         }
     }
+
+    [Fact]
+    public async System.Threading.Tasks.Task FileManagementService_ExplicitOverridePath_WinsOverSavedSettings()
+    {
+        var logger = new LoggerService();
+        var regKey = $@"SOFTWARE\ScreenRecorderTest_{Guid.NewGuid():N}";
+        var settingsService = new SettingsService(logger, regKey);
+        var savedDir = Path.Combine(Path.GetTempPath(), $"test_saved_{Guid.NewGuid():N}");
+        var overrideDir = Path.Combine(Path.GetTempPath(), $"test_override_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(savedDir);
+        Directory.CreateDirectory(overrideDir);
+
+        var testFile = Path.Combine(Path.GetTempPath(), $"test_upload_{Guid.NewGuid():N}.mp4");
+        File.WriteAllText(testFile, "video content override 1234567890");
+
+        try
+        {
+            // La config GUARDADA apunta a savedDir...
+            var settings = settingsService.LoadSettings();
+            settings.NetworkPath = savedDir;
+            settingsService.SaveSettings(settings);
+
+            // ...pero la sobrecarga fuerza overrideDir: debe ganar la ruta forzada.
+            var fms = new FileManagementService(logger, settingsService);
+            var ok = await fms.TryUploadFileAsync(testFile, overrideDir, maxRetries: 1);
+
+            Assert.True(ok);
+            Assert.False(File.Exists(testFile)); // origen eliminado tras verificación
+            Assert.True(File.Exists(Path.Combine(overrideDir, Path.GetFileName(testFile))));
+            Assert.False(File.Exists(Path.Combine(savedDir, Path.GetFileName(testFile))));
+            Assert.Empty(Directory.GetFiles(overrideDir, "*.tmp"));
+        }
+        finally
+        {
+            if (File.Exists(testFile)) File.Delete(testFile);
+            if (Directory.Exists(savedDir)) Directory.Delete(savedDir, recursive: true);
+            if (Directory.Exists(overrideDir)) Directory.Delete(overrideDir, recursive: true);
+            try { Registry.LocalMachine.DeleteSubKeyTree(regKey, throwOnMissingSubKey: false); } catch { }
+        }
+    }
 }
