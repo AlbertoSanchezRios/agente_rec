@@ -80,7 +80,7 @@ Para consultar guías completas redactadas en tono humano, visita los siguientes
 ### 1. Instalación Rápida
 Ejecuta el instalador generado en la carpeta `dist/`:
 ```cmd
-msiexec /i dist\ScreenRecorder-0.1.1.msi /qn /norestart
+msiexec /i dist\ScreenRecorder-0.1.2.msi /qn /norestart
 ```
 
 ### 2. Configuración de la Ruta de Red (NUC)
