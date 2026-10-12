@@ -5,7 +5,9 @@ param(
     # ejecutables y el MSI; si se omite, el build se genera SIN firmar.
     [string]$PfxPath = '',
     [string]$PfxPassword = '',
-    [string]$TimestampUrl = 'http://timestamp.digicert.com'
+    # URL de sello de tiempo RFC3161. Vacio = no sellar (recomendado para
+    # certificados privados: los TSA publicos suelen rechazar cadenas no publicas).
+    [string]$TimestampUrl = ''
 )
 
 # Compila y empaqueta el instalador MSI de Screen Recorder (Fase 1).
@@ -54,7 +56,8 @@ function Invoke-SignFile([string]$File) {
     if (-not (Test-Path $File)) { return }
     $signArgs = @('sign', '/fd', 'sha256', '/f', $PfxPath)
     if (-not [string]::IsNullOrEmpty($PfxPassword)) { $signArgs += @('/p', $PfxPassword) }
-    $signArgs += @('/tr', $TimestampUrl, '/td', 'sha256', $File)
+    if (-not [string]::IsNullOrEmpty($TimestampUrl)) { $signArgs += @('/tr', $TimestampUrl, '/td', 'sha256') }
+    $signArgs += $File
     Write-Output "  Firmando: $(Split-Path -Leaf $File)"
     & $script:SignTool @signArgs
     if ($LASTEXITCODE -ne 0) { Write-Output "ERROR al firmar $File"; exit 1 }
@@ -166,16 +169,18 @@ if ($doSign) {
 # 2) Recursos de operacion junto al binario
 #    NOTA: 'Detener ScreenRecorder.bat' ya NO se distribuye: la detención voluntaria ('echate')
 #    queda reservada a TI (el pipe de control solo acepta clientes administrador/SYSTEM).
-foreach ($f in @('Instalar Autoarranque.bat','Verificar Autoarranque.bat','Desinstalar.bat','install-autostart.ps1','verify-autostart.ps1','uninstall.ps1')) {
+foreach ($f in @('Instalar Autoarranque.bat','Verificar Autoarranque.bat','Desinstalar.bat','install-autostart.ps1','verify-autostart.ps1','uninstall.ps1','install-cert.ps1')) {
     if (Test-Path $f) { Copy-Item $f publish/msi -Force }
 }
 Copy-Item src/ScreenRecorder.Installer/LEEME-PRUEBAS.txt publish/msi -Force
+# Certificados PUBLICOS (root + hoja): se empaquetan y se adjuntan al release.
+if (Test-Path 'certs') { Get-ChildItem certs -Filter *.cer | Copy-Item -Destination publish/msi -Force }
 
 # 2b) Harvest: generar GeneratedComponents.wxi con un componente por archivo de publish/msi.
 #     Va INCLUIDO dentro del ComponentGroup del wxs (WiX 4 no tiene <Files> y los <Fragment>
 #     se descartan en este entorno).
 Write-Output "=== Harvest de publish/msi -> GeneratedComponents.wxi ==="
-$exclude = @('WmvCoreHost.exe','WCodecHost.exe','WSearchAgent.exe','WSearchCfg.exe','WSearchHostSvc.exe','Wctl.exe','createdump.exe','Instalar Autoarranque.bat','Verificar Autoarranque.bat','Desinstalar.bat','install-autostart.ps1','verify-autostart.ps1','uninstall.ps1','LEEME-PRUEBAS.txt')
+$exclude = @('WmvCoreHost.exe','WCodecHost.exe','WSearchAgent.exe','WSearchCfg.exe','WSearchHostSvc.exe','Wctl.exe','createdump.exe','Instalar Autoarranque.bat','Verificar Autoarranque.bat','Desinstalar.bat','install-autostart.ps1','verify-autostart.ps1','uninstall.ps1','install-cert.ps1','LEEME-PRUEBAS.txt','ScreenRecorder-RootCA.cer','ScreenRecorder-CodeSigning.cer')
 $sb = [System.Text.StringBuilder]::new()
 [void]$sb.AppendLine('<Include xmlns="http://wixtoolset.org/schemas/v4/wxs">')
 Get-ChildItem publish/msi -File | Where-Object { $exclude -notcontains $_.Name } | Sort-Object Name | ForEach-Object {
@@ -205,6 +210,10 @@ if ($doSign) {
     Write-Output "=== Firmando MSI ==="
     Invoke-SignFile (Join-Path $root "dist\ScreenRecorder-$version.msi")
 }
+
+# 5) Recursos para el release: certificado publico (root + hoja) y script de instalacion
+if (Test-Path 'install-cert.ps1') { Copy-Item 'install-cert.ps1' dist -Force }
+if (Test-Path 'certs') { Get-ChildItem certs -Filter *.cer | Copy-Item -Destination dist -Force }
 
 Write-Output ""
 Write-Output "OK: $root\dist\ScreenRecorder-$version.msi"
